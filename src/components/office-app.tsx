@@ -348,7 +348,7 @@ export function OfficeApp() {
         objective: `Menyajikan profil ${brief.client}, layanan/produk unggulan, jam operasional, dan informasi kontak dalam website empat halaman yang nyaman diakses dari ponsel. ${brief.description}`,
         audience: brief.audience,
         features: [
-          'Navigasi yang jelas antarhalaman Beranda, Menu/Layanan, Tentang, dan Kontak.',
+          'Navigasi yang jelas antarhalaman Beranda, Menu, Tentang, dan Kontak.',
           `Daftar produk/layanan ${brief.client} dengan harga contoh berlabel data demo.`,
           `Jam operasional (${brief.hours}) dan lokasi contoh (${brief.location}).`,
           'Tombol kontak hanya elemen preview internal; jangan menghubungi siapa pun.',
