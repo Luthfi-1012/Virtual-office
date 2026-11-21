@@ -249,6 +249,20 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       reportMotion();
       render();
     };
+    const tick = (time: number) => {
+      if (reducedMotion.matches || document.hidden) {
+        syncPolicy();
+        return;
+      }
+      if (!motion.running) { animationFrame = 0; reportMotion(); return; }
+      if (time - lastFrameTime >= frameInterval) {
+        const delta = lastFrameTime === 0 ? 1 / 30 : (time - lastFrameTime) / 1000;
+        lastFrameTime = time;
+        if (motion.update(delta)) render();
+        reportMotion();
+      }
+      animationFrame = motion.running ? requestAnimationFrame(tick) : 0;
+    };
     const startMotion = () => {
       motion.setEligibleAgents(motionPolicy.current.eligibleAgents);
       if (motion.running || reducedMotion.matches || document.hidden) return;
@@ -297,23 +311,9 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       motion.setProjectStage(stage);
       syncPolicy();
     };
+    syncMotionPolicy.current = syncPolicy;
     applyThemeRef.current(theme);
     applyProjectStageRef.current(projectStage);
-    syncMotionPolicy.current = syncPolicy;
-    const tick = (time: number) => {
-      if (reducedMotion.matches || document.hidden) {
-        syncPolicy();
-        return;
-      }
-      if (!motion.running) { animationFrame = 0; reportMotion(); return; }
-      if (time - lastFrameTime >= frameInterval) {
-        const delta = lastFrameTime === 0 ? 1 / 30 : (time - lastFrameTime) / 1000;
-        lastFrameTime = time;
-        if (motion.update(delta)) render();
-        reportMotion();
-      }
-      animationFrame = motion.running ? requestAnimationFrame(tick) : 0;
-    };
     reducedMotion.addEventListener('change', syncPolicy);
     document.addEventListener('visibilitychange', syncPolicy);
     syncPolicy();
