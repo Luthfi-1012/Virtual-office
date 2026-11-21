@@ -6,6 +6,7 @@ import type { QoderWakeSnapshot } from '../src/lib/qoderwake';
 const checkedAt = '2026-11-20T07:00:00.000Z';
 const characterWakerId = (id: string) => agents.find(agent => agent.id === id)!.wakerId;
 const recordedSnapshot = JSON.parse(readFileSync(new URL('./qoderwake-roster-2026-11-21.fixture.json', import.meta.url), 'utf8')) as QoderWakeSnapshot;
+
 function fixture(active = true): QoderWakeSnapshot {
   return {
     status: 'live', checkedAt, version: '1.2.22',
@@ -13,11 +14,18 @@ function fixture(active = true): QoderWakeSnapshot {
     board: { total: active ? 1 : 0, byStatus: { waiting: 0, pending: 0, running: active ? 1 : 0, done: 0, failed: 0, cancelled: 0 }, attention: { approval: 0, acceptance: 0 }, generatedAt: checkedAt },
     wakers: agents.map(agent => ({ id: agent.wakerId, name: agent.name, status: 'online', executionLocation: 'local', onlineStatus: 'online', connectionStatus: 'connected', sessionCount: active && agent.id === 'backend' ? 1 : 0, taskCount: active && agent.id === 'backend' ? 1 : 0 })),
     tasks: active ? [{ id: 'task-test', title: '第 5 次运行 — Validasi API Kopi Senja', type: 'direct_session', status: 'running', rawStatus: 'running', assigneeId: characterWakerId('backend'), assigneeName: 'Backend Agent', sourceType: 'conversation', sourceName: 'Backend Agent', updatedAt: checkedAt, lastActiveAt: checkedAt }] : [],
+    wakerTasks: [],
     activities: active ? [{ id: 'session-test', wakerId: characterWakerId('backend'), title: 'Menyiapkan kontrak API', status: 'running', startedAt: checkedAt, lastActiveAt: checkedAt, endedAt: null, source: 'console', scenario: 'direct' }] : [],
+    credits: null,
     message: null,
   };
 }
-const disconnected: QoderWakeSnapshot = { status: 'disconnected', checkedAt: '2026-11-20T07:00:10.000Z', version: null, daemon: null, board: null, wakers: [], tasks: [], activities: [], message: 'CLI tidak tersedia untuk pengujian.' };
+
+const disconnected: QoderWakeSnapshot = {
+  status: 'disconnected', checkedAt: '2026-11-20T07:00:10.000Z', version: null, daemon: null, board: null,
+  wakers: [], tasks: [], wakerTasks: [], activities: [], credits: null, message: 'CLI tidak tersedia untuk pengujian.',
+};
+
 async function disableWebGL(page: Page) {
   await page.addInitScript(() => {
     const getContext = HTMLCanvasElement.prototype.getContext;
@@ -27,9 +35,11 @@ async function disableWebGL(page: Page) {
     } as typeof getContext;
   });
 }
+
 async function capture(page: Page, name: string) {
   if (process.env.OFFICE_CAPTURE === '1') await page.screenshot({ path: `.local/visual-refinement/snapshot-${name}-fixture-1440x1000.png`, fullPage: false });
 }
+
 async function open(page: Page, snapshot: () => QoderWakeSnapshot) {
   await page.clock.install({ time: new Date(checkedAt) });
   await page.route('**/api/qoderwake', route => route.fulfill({ json: snapshot() }));
@@ -50,7 +60,7 @@ test('maps all eight characters by stable source IDs with metadata-only status',
   }
 });
 
-test('renders all eight recorded Wakers as online without another native read', async ({ page }) => {
+test('renders all eight recorded Wakers as online in realtime mode without streaming claims', async ({ page }) => {
   const errors: string[] = [];
   let nativeReads = 0;
   page.on('pageerror', error => errors.push(error.message));
@@ -68,14 +78,15 @@ test('renders all eight recorded Wakers as online without another native read', 
   }
   await expect(page.getByTestId('snapshot-status')).toHaveText('Terbaru');
   await expect(page.getByTestId('native-status')).toHaveText('Online');
-  await expect(page.getByText('Simulasi kantor', { exact: true })).toBeVisible();
-  await expect(page.getByText('Bukan aktivitas Waker sebenarnya', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /lanjut simulasi/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /hentikan semua/i })).toHaveCount(0);
+  await expect(page.getByTestId('live-activity')).toBeVisible();
   await capture(page, 'recorded-live-roster');
   expect(nativeReads).toBe(1);
   expect(errors).toEqual([]);
 });
 
-test('labels fresh snapshots without streaming claims and preserves original task titles', async ({ page }) => {
+test('labels fresh snapshots cleanly, preserves original task titles, and runs realtime motion immediately', async ({ page }) => {
   await open(page, () => fixture());
   await page.getByRole('button', { name: 'Pilih Backend Agent', exact: true }).click();
   await expect(page.getByTestId('native-status')).toContainText('Bekerja · running');
@@ -84,14 +95,13 @@ test('labels fresh snapshots without streaming claims and preserves original tas
   await expect(page.getByTestId('snapshot-checked')).toHaveAttribute('datetime', checkedAt);
   await expect(page.locator('.mode-banner')).toContainText('Snapshot QoderWake');
   await expect(page.locator('.mode-banner')).not.toContainText('LIVE');
-  await expect(page.getByText('Simulasi kantor', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^Pause/ })).toHaveCount(0);
   const backend = page.getByRole('button', { name: 'Pilih Backend Agent', exact: true });
   const before = await backend.getAttribute('style');
   await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'true');
   await page.clock.runFor(500);
+  // Backend is actively working on QoderWake task, so it remains seated at desk while idle colleagues move.
   expect(await backend.getAttribute('style')).toBe(before);
-  await page.getByRole('button', { name: 'Hentikan semua gerakan simulasi' }).click();
   await capture(page, 'fresh-active');
 });
 
@@ -114,7 +124,7 @@ test('keeps local brief processing usable while a late native snapshot is pendin
   await nativeRequest;
   await expect(page.locator('canvas')).toHaveAttribute('data-scene-ready', 'true');
   await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'true');
-  await expect(page.getByTestId('simulation-hint')).toContainText('simulasi kantor lokal');
+  await expect(page.getByTestId('live-activity')).toBeVisible();
   const refresh = page.getByRole('button', { name: 'Periksa koneksi' });
   await expect(refresh).toBeDisabled();
   await expect(page.getByTestId('snapshot-status')).toHaveText('Memeriksa QoderWake');
@@ -151,7 +161,7 @@ for (const failure of ['disconnected', 'network', 'malformed'] as const) {
     await expect(page.getByRole('complementary').getByText('第 5 次运行 — Validasi API Kopi Senja', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Tersambung ke penyimpanan lokal', { exact: true })).toBeVisible();
     await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'true');
-    await expect(page.getByTestId('simulation-hint')).toContainText('Status Waker tidak diketahui');
+    await expect(page.getByTestId('live-activity')).toContainText('Koneksi terputus');
     if (failure === 'network') await capture(page, 'disconnected');
     broken = false;
     await page.getByRole('button', { name: 'Periksa koneksi' }).click();
@@ -160,47 +170,52 @@ for (const failure of ['disconnected', 'network', 'malformed'] as const) {
   });
 }
 
-test('expires without a network call and keeps local simulation separate from unknown Waker status', async ({ page }) => {
+test('auto-refreshes snapshot silently in realtime so live view stays fresh without going stale', async ({ page }) => {
   let reads = 0;
-  await open(page, () => { reads++; return fixture(false); });
-  await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'true');
-  await page.clock.fastForward(61000);
-  await expect(page.getByTestId('snapshot-status')).toHaveText('Kedaluwarsa');
-  await expect(page.getByTestId('native-status')).toContainText('Kedaluwarsa');
-  await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'true');
-  await expect(page.getByRole('button', { name: 'Jeda simulasi kantor' })).toBeEnabled();
-  await expect(page.getByTestId('simulation-hint')).toContainText('simulasi kantor lokal');
-  await expect(page.getByTestId('simulation-hint')).toContainText('Status Waker tidak diketahui');
-  await expect(page.getByTestId('snapshot-success')).toHaveAttribute('datetime', checkedAt);
+  await page.clock.install({ time: new Date(checkedAt) });
+  await page.route('**/api/qoderwake/workflow', route => route.fulfill({ json: { request: null, run: null, workers: [], pendingConfirmations: [], gate: 'not_started' } }));
+  await page.route('**/api/qoderwake', route => {
+    reads++;
+    return route.fulfill({
+      json: { ...fixture(false), checkedAt: new Date(Date.parse(checkedAt) + (reads - 1) * 60_000).toISOString() },
+    });
+  });
+  await page.goto('/');
+  await expect(page.locator('canvas')).toHaveAttribute('data-scene-ready', 'true');
+  await expect(page.getByTestId('snapshot-status')).toHaveText('Terbaru');
   expect(reads).toBe(1);
-  await capture(page, 'stale');
+  await page.clock.fastForward(65000);
+  await expect.poll(() => reads).toBeGreaterThanOrEqual(2);
+  await expect(page.getByTestId('snapshot-status')).toHaveText('Terbaru');
 });
 
-test('pauses and resumes local idle motion, then freezes immediately when that Waker receives a task', async ({ page }) => {
+test('marks snapshot stale cleanly if network disconnects before expiry threshold', async ({ page, context }) => {
+  await open(page, () => fixture(false));
+  await context.setOffline(true);
+  await expect(page.getByTestId('snapshot-status')).toHaveText('Koneksi terputus');
+  await expect(page.getByTestId('snapshot-success')).toHaveAttribute('datetime', checkedAt);
+  await context.setOffline(false);
+});
+
+test('recalls roaming figure smoothly when assigned a QoderWake task while office stays alive', async ({ page }) => {
   let snapshot = fixture(false);
   const methods: string[] = [];
   page.on('request', request => { if (request.url().includes('/api/qoderwake')) methods.push(request.method()); });
   await open(page, () => snapshot);
-  const hotspot = page.getByRole('button', { name: 'Pilih Project Manager / Orchestrator', exact: true });
+  const pmHotspot = page.getByRole('button', { name: 'Pilih Project Manager / Orchestrator', exact: true });
   await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'true');
-  await page.clock.runFor(500);
-  await page.getByRole('button', { name: 'Jeda simulasi kantor' }).click();
-  const position = await hotspot.getAttribute('style');
-  await page.clock.runFor(1000);
-  expect(await hotspot.getAttribute('style')).toBe(position);
-  await page.getByRole('button', { name: 'Lanjutkan simulasi kantor' }).click();
-  await page.clock.runFor(500);
-  expect(await hotspot.getAttribute('style')).not.toBe(position);
+  const seatStyle = await pmHotspot.getAttribute('style');
+  await page.clock.runFor(2500);
+  expect(await pmHotspot.getAttribute('style')).not.toBe(seatStyle);
+  // Assign a live task to every Waker -> motion recalls PM cleanly and eventually settles once seated.
   snapshot = fixture();
-  snapshot.tasks[0].assigneeId = characterWakerId('pm');
-  snapshot.tasks[0].assigneeName = agents[0].name;
-  snapshot.wakers[0].taskCount = 1;
+  snapshot.wakers.forEach((w, idx) => { w.taskCount = 1; snapshot.tasks.push({ id: `task-${idx}`, title: `Task ${idx}`, type: 'direct_session', status: 'running', rawStatus: 'running', assigneeId: w.id, assigneeName: w.name, sourceType: 'conversation', sourceName: w.name, updatedAt: checkedAt, lastActiveAt: checkedAt }); });
   await page.getByRole('button', { name: 'Periksa koneksi' }).click();
   await expect(page.getByTestId('native-status')).toContainText('Bekerja · running');
+  for (let i = 0; i < 30 && (await page.locator('canvas').getAttribute('data-motion-running')) === 'true'; i++) {
+    await page.clock.runFor(1000);
+  }
   await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'false');
-  const held = await hotspot.getAttribute('style');
-  await page.clock.runFor(1000);
-  expect(await hotspot.getAttribute('style')).toBe(held);
   expect(methods.every(method => method === 'GET')).toBe(true);
 });
 
@@ -283,15 +298,18 @@ for (const { id, action, name } of [
   { id: 'pm', action: 'Minum kopi di pantry', name: 'idle-pantry' },
   { id: 'design', action: 'Membaca buku di sudut fokus', name: 'idle-focus' },
   { id: 'delivery', action: 'Bermain konsol di lounge', name: 'idle-lounge' },
+  { id: 'backend', action: 'Ngobrol santai di ruang rapat', name: 'idle-chat' },
 ]) {
-  test(`reaches ${name} locally with a selectable figure and a real pause`, async ({ page }) => {
+  test(`reaches ${name} automatically in realtime with selectable figures`, async ({ page }) => {
     test.setTimeout(60000);
     const errors: string[] = [];
     const methods: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('request', request => { if (request.url().includes('/api/')) methods.push(request.method()); });
     const snapshot = fixture(false);
-    const companions = id === 'delivery' ? [characterWakerId('design'), characterWakerId('frontend')] : [characterWakerId('qa'), characterWakerId('delivery'), characterWakerId('billing')];
+    const companions = id === 'delivery'
+      ? [characterWakerId('design'), characterWakerId('frontend')]
+      : [characterWakerId('qa'), characterWakerId('delivery'), characterWakerId('billing')];
     const eligible = new Set<string>([characterWakerId(id), ...companions]);
     snapshot.wakers.forEach(waker => {
       if (!eligible.has(waker.id)) {
@@ -300,25 +318,15 @@ for (const { id, action, name } of [
         waker.connectionStatus = 'disconnected';
       }
     });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
     await open(page, () => snapshot);
     const agent = agents.find(item => item.id === id)!;
     const hotspot = page.getByRole('button', { name: `Pilih ${agent.name}`, exact: true });
     await hotspot.click();
-    const start = await hotspot.getAttribute('style');
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await page.getByRole('button', { name: 'Lanjutkan simulasi kantor' }).click();
-    const hint = page.getByTestId('simulation-hint');
+    const hint = page.getByTestId('live-activity');
     for (let second = 0; second < 35 && !(await hint.textContent())?.includes(action); second++) await page.clock.runFor(1000);
     await expect(hint).toContainText(action);
-    expect(await hotspot.getAttribute('style')).not.toBe(start);
     await expect(page.getByTestId('native-status')).toHaveText('Online');
-    await expect(page.getByText('Bukan aktivitas Waker sebenarnya', { exact: true })).toBeVisible();
     await capture(page, name);
-    await page.getByRole('button', { name: 'Jeda simulasi kantor' }).click();
-    const stopped = await hotspot.getAttribute('style');
-    await page.clock.runFor(7000);
-    expect(await hotspot.getAttribute('style')).toBe(stopped);
     await hotspot.click();
     await expect(page.getByRole('complementary', { name: 'Detail agent' }).getByRole('heading', { name: agent.name, exact: true })).toBeVisible();
     expect(methods.length).toBeGreaterThan(0);
@@ -327,19 +335,13 @@ for (const { id, action, name } of [
   });
 }
 
-test('honors reduced motion changes and never resumes automatically', async ({ page }) => {
+test('honors reduced motion automatically on toggle without requiring simulation buttons', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await open(page, () => fixture(false));
-  await expect(page.getByRole('button', { name: 'Lanjutkan simulasi kantor' })).toBeDisabled();
   await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'false');
+  await expect(page.getByTestId('live-activity')).toHaveText('Preferensi kurangi gerak aktif.');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.getByRole('button', { name: 'Lanjutkan simulasi kantor' }).click();
-  await page.clock.runFor(300);
+  await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'true');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'false');
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'false');
-  await page.getByRole('button', { name: 'Lanjutkan simulasi kantor' }).click();
-  await page.getByRole('button', { name: 'Hentikan semua gerakan simulasi' }).click();
   await expect(page.locator('canvas')).toHaveAttribute('data-motion-running', 'false');
 });

@@ -2,11 +2,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { facilities } from '@/lib/agents';
 import type { WakerDisplayStatus } from '@/lib/qoderwake';
+import type { ProjectStage } from '@/lib/office-motion';
 import { OfficeScene, type OfficeSceneHandle } from './office-scene';
 
 const areas = ['development', 'delivery', ...facilities.map(facility => facility.id)];
-export function OfficeMap({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, snapshotLabel, onSelect, onFallback }: {
+
+export function OfficeMap({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, snapshotLabel, theme, projectStage, onSelect, onFallback }: {
   selected: string; eligibleAgents: readonly string[]; wakerStatuses: Readonly<Record<string, WakerDisplayStatus>>; snapshotExpiresAt: number; snapshotLabel: string;
+  theme: 'light' | 'dark'; projectStage: ProjectStage | null;
   onSelect: (id: string) => void; onFallback: () => void;
 }) {
   const scene = useRef<OfficeSceneHandle>(null);
@@ -15,9 +18,8 @@ export function OfficeMap({ selected, eligibleAgents, wakerStatuses, snapshotExp
   const [failed, setFailed] = useState(false);
   const [motionRunning, setMotionRunning] = useState(false);
   const [activity, setActivity] = useState<string | null>(null);
-  const [blocked, setBlocked] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(true);
-  const [stopped, setStopped] = useState(true);
+
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
     const update = () => setReducedMotion(preference.matches);
@@ -25,40 +27,40 @@ export function OfficeMap({ selected, eligibleAgents, wakerStatuses, snapshotExp
     preference.addEventListener('change', update);
     return () => preference.removeEventListener('change', update);
   }, []);
+
   const fit = () => { setTopView(false); scene.current?.fit(); };
   const focus = (id: string) => { setTopView(false); onSelect(id); scene.current?.focus(id); };
   const unavailable = () => { setFailed(true); onFallback(); };
-  const motionUnavailable = failed || reducedMotion || blocked || eligibleAgents.length === 0;
-  const motionHint = reducedMotion ? 'Preferensi kurangi gerak aktif.'
-    : snapshotExpiresAt <= Date.now() ? `${snapshotLabel}; simulasi kantor lokal · ${activity ?? 'aktivitas bergantian'}. Status Waker tidak diketahui.`
-    : blocked ? 'Figur dibekukan: statusnya berubah. Menunggu snapshot yang mengizinkan simulasi.'
-    : eligibleAgents.length === 0 ? 'Tidak ada Waker yang terkonfirmasi tanpa task aktif.'
-    : motionRunning ? activity ?? 'Bergantian menggunakan fasilitas.' : stopped ? 'Dihentikan. Pilih Lanjut untuk animasi lokal.' : 'Dijeda; posisi figur dipertahankan.';
+
+  const liveLabel = reducedMotion
+    ? 'Preferensi kurangi gerak aktif.'
+    : projectStage
+      ? projectStage.label
+      : eligibleAgents.length === 0 && !motionRunning
+        ? 'Seluruh agent aktif mengerjakan tugas QoderWake.'
+        : snapshotExpiresAt <= Date.now()
+          ? `${snapshotLabel} · ${activity ?? 'aktivitas realtime berjalan'}`
+          : motionRunning
+            ? activity ?? 'Menyiapkan aktivitas kantor realtime…'
+            : 'Kantor siap dalam mode realtime.';
+
   return <div className="office-3d">
     <div className="scene-view-meta">
-      <div className="scene-view-badges">
-        <span className="render-badge"><i aria-hidden="true"/>Model 3D orisinal</span>
-        <span className="demo-motion-badge"><strong>Simulasi kantor</strong><small>Bukan aktivitas Waker sebenarnya</small></span>
+      <div className="scene-room-switch" role="group" aria-label="Fokus ruang tim">
+        <button aria-label="Fokus Development Room" aria-pressed={selected === 'development'} disabled={failed} onClick={() => focus('development')}>Development <span>5</span></button>
+        <button aria-label="Fokus Web Delivery Room" aria-pressed={selected === 'delivery'} disabled={failed} onClick={() => focus('delivery')}>Web Delivery <span>3</span></button>
+        <button aria-pressed={!areas.includes(selected) || selected === 'pm'} disabled={failed} onClick={() => { fit(); onSelect('pm'); }}>Seluruh kantor</button>
       </div>
-      <label className="area-picker"><span aria-hidden="true">⌖</span><select aria-label="Pilih area kantor" value={areas.includes(selected) ? selected : ''} disabled={failed} onChange={event => { if (event.target.value) focus(event.target.value); }}>
+      <label className="area-picker" htmlFor="office-area-select"><span aria-hidden="true">⌖</span><select id="office-area-select" name="officeArea" aria-label="Pilih area kantor" value={areas.includes(selected) ? selected : ''} disabled={failed} onChange={event => { if (event.target.value) focus(event.target.value); }}>
         <option value="">Fokus area…</option><option value="development">Development Room</option><option value="delivery">Web Delivery Room</option>
         {facilities.map(facility => <option key={facility.id} value={facility.id}>{facility.name}</option>)}
       </select></label>
     </div>
-    <OfficeScene ref={scene} selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} snapshotExpiresAt={snapshotExpiresAt} onSelect={onSelect} onZoomChange={setZoom} onFallback={unavailable} onMotionChange={setMotionRunning} onActivityChange={(next, held) => { setActivity(next); setBlocked(held); }}/>
-    <div className="scene-room-switch" role="group" aria-label="Fokus ruang tim">
-      <button aria-label="Fokus Development Room" disabled={failed} onClick={() => focus('development')}>Development <span>5</span></button>
-      <button aria-label="Fokus Web Delivery Room" disabled={failed} onClick={() => focus('delivery')}>Web Delivery <span>3</span></button>
-      <button disabled={failed} onClick={() => { fit(); onSelect('pm'); }}>Seluruh kantor</button>
-    </div>
+    <OfficeScene ref={scene} selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} snapshotExpiresAt={snapshotExpiresAt} theme={theme} projectStage={projectStage} onSelect={onSelect} onZoomChange={setZoom} onFallback={unavailable} onMotionChange={setMotionRunning} onActivityChange={next => { setActivity(next); }}/>
     <div className="scene-bottom-bar">
-      <div className="simulation-controls">
-        <div className="simulation-buttons" role="group" aria-label="Animasi lokal saja, bukan kontrol QoderWake">
-          <button aria-label={motionRunning ? 'Jeda simulasi kantor' : 'Lanjutkan simulasi kantor'} aria-pressed={motionRunning} disabled={!motionRunning && motionUnavailable} onClick={() => { setStopped(false); if (motionRunning) scene.current?.stopMotion(); else scene.current?.startMotion(); }}>{motionRunning ? 'Jeda' : 'Lanjut'}<span>simulasi</span></button>
-          <button aria-label="Hentikan semua gerakan simulasi" disabled={failed} onClick={() => { scene.current?.stopMotion(); setStopped(true); }}>Hentikan semua</button>
-        </div>
-        <span className="simulation-hint" data-testid="simulation-hint" role="status">{motionHint}</span>
-        <small>Hanya animasi lokal · tidak mengendalikan QoderWake</small>
+      <div className={`live-activity-pill ${projectStage ? 'is-project' : ''}`} data-testid="live-activity" role="status">
+        <span className={motionRunning ? 'live-dot active' : 'live-dot'} aria-hidden="true"/>
+        <span>{liveLabel}</span>
       </div>
       <div className="scene-controls" role="group" aria-label="Kontrol tampilan kantor">
         <button aria-label="Perkecil tampilan" title="Perkecil" disabled={failed} onClick={() => scene.current?.zoomOut()}>−</button>

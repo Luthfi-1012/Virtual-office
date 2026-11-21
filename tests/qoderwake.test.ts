@@ -23,6 +23,14 @@ const task = {
   source: { type: 'manual', name: 'Website Delivery' }, sessionId: null,
   createdAt: '2026-11-19T00:00:00.000Z', updatedAt: '2026-11-19T01:00:00.000Z', lastActiveAt: '2026-11-19T01:00:00.000Z',
   links: { primaryUrl: 'http://private.invalid/task' },
+  children: [
+    {
+      id: 'node-1', title: 'Tetapkan tujuan dan acceptance criteria', type: 'wakerflow_node', status: 'done', rawStatus: 'completed',
+      assignee: { id: 'agent-pm', name: 'Project Manager / Orchestrator' },
+      updatedAt: '2026-11-19T01:00:00.000Z', lastActiveAt: '2026-11-19T01:00:00.000Z',
+      links: { primaryUrl: 'http://private.invalid/child' },
+    },
+  ],
 };
 const summary = {
   total: 1, byStatus: { waiting: 0, pending: 0, running: 0, done: 1, failed: 0, cancelled: 0 },
@@ -32,6 +40,14 @@ const sessions = [
   { sessionId: 'session-old', agentId: 'agent-pm', title: 'Tahap lama', status: 'stopped', startedAt: '2026-11-18T00:00:00.000Z', lastActiveAt: '2026-11-18T01:00:00.000Z', endedAt: '2026-11-18T01:00:00.000Z', sessionSource: 'workflow', scenario: 'worker', cwd: 'C:\\private\\workspace' },
   { sessionId: 'session-new', agentId: 'agent-pm', title: 'Tahap terbaru', status: 'stopped', startedAt: '2026-11-19T00:00:00.000Z', lastActiveAt: '2026-11-19T01:00:00.000Z', endedAt: '2026-11-19T01:00:00.000Z', sessionSource: 'workflow', scenario: 'worker', nativeTranscript: { configRoot: 'private-config' } },
 ];
+const usage = {
+  displayMode: 'qoder',
+  qoderUsage: {
+    userId: 'private-user',
+    upgradeUrl: 'https://private.invalid/upgrade',
+    userQuota: { total: 3000, used: 535, remaining: 2465, percentage: 0.18, unit: 'credits' },
+  },
+};
 
 function fixtureCommand(calls: readonly string[][]): QoderWakeCommand {
   return async args => {
@@ -40,12 +56,13 @@ function fixtureCommand(calls: readonly string[][]): QoderWakeCommand {
     if (args[0] === 'waker') return [waker];
     if (args[0] === 'board' && args[1] === 'tasks') return { items: [task], total: 1, generatedAt: summary.generatedAt, errors: [] };
     if (args[0] === 'board' && args[1] === 'summary') return summary;
-    if (args[0] === 'session' && args[3] === 'agent-pm') return sessions;
+    if (args[0] === 'session' && args[1] === 'list') return sessions;
+    if (args[0] === 'account' && args[1] === 'usage') return usage;
     throw new Error(`Unexpected command: ${args.join(' ')}`);
   };
 }
 
-it('reads only verified CLI commands and returns a sanitized live snapshot', async () => {
+it('reads verified read-only CLI commands in parallel and returns a sanitized live snapshot', async () => {
   const calls: string[][] = [];
   const snapshot = await createQoderWakeReader(fixtureCommand(calls))();
 
@@ -54,34 +71,52 @@ it('reads only verified CLI commands and returns a sanitized live snapshot', asy
     ['waker', 'list', '--json'],
     ['board', 'tasks', '--limit', '50', '--json'],
     ['board', 'summary', '--json'],
-    ['session', 'list', '--waker-id', 'agent-pm', '--json'],
+    ['session', 'list', '--json'],
+    ['account', 'usage', '--json'],
   ]));
-  expect(calls).toHaveLength(5);
+  expect(calls).toHaveLength(6);
   for (const forbidden of ['run', 'create', 'send', 'confirm', 'stop', 'start', 'login', 'whoami']) expect(calls.flat()).not.toContain(forbidden);
   expect(snapshot.status).toBe('live');
   expect(snapshot.version).toBe('1.2.22');
   expect(snapshot.daemon).toEqual({ deviceStatus: 'online', sessionsTotal: 36, sessionsRunning: 0, agentCount: 8 });
   expect(snapshot.wakers[0]).toEqual({ id: 'agent-pm', name: waker.name, status: 'online', executionLocation: 'local', onlineStatus: 'online', connectionStatus: 'connected', sessionCount: 2, taskCount: 1 });
   expect(snapshot.tasks[0].title).toBe('Run kelima');
+  expect(snapshot.wakerTasks).toHaveLength(1);
+  expect(snapshot.wakerTasks?.[0]).toMatchObject({ id: 'node-1', assigneeId: 'agent-pm', title: 'Tetapkan tujuan dan acceptance criteria' });
   expect(snapshot.activities.map(item => item.id)).toEqual(['session-new', 'session-old']);
   expect(snapshot.board?.byStatus.done).toBe(1);
+  expect(snapshot.credits).toEqual({ total: 3000, used: 535, remaining: 2465, percentage: 0.18, unit: 'credits' });
   const serialized = JSON.stringify(snapshot);
   for (const privateValue of ['private-user', 'private-device', 'private-machine', 'private\\workspace', 'private role', 'private.invalid', 'private-config']) expect(serialized).not.toContain(privateValue);
 });
 
-it('serializes CLI reads so concurrent commands cannot exhaust the timeout window', async () => {
+it('executes CLI reads concurrently and deduplicates overlapping calls', async () => {
   let active = 0;
   let maximumActive = 0;
-  const respond = fixtureCommand([]);
-  const snapshot = await createQoderWakeReader(async args => {
+  const calls: string[][] = [];
+  const respond = fixtureCommand(calls);
+  const read = createQoderWakeReader(async args => {
     active++;
     maximumActive = Math.max(maximumActive, active);
-    await Promise.resolve();
+    await new Promise(resolve => setTimeout(resolve, 10));
     try { return await respond(args); } finally { active--; }
-  })();
+  });
 
+  const [first, second] = await Promise.all([read(), read()]);
+  expect(first.status).toBe('live');
+  expect(second).toEqual(first);
+  expect(maximumActive).toBe(6);
+  expect(calls).toHaveLength(6);
+});
+
+it('keeps live snapshot working even if account usage lookup fails', async () => {
+  const respond = fixtureCommand([]);
+  const snapshot = await createQoderWakeReader(async args => {
+    if (args[0] === 'account') throw new Error('usage unavailable');
+    return respond(args);
+  })();
   expect(snapshot.status).toBe('live');
-  expect(maximumActive).toBe(1);
+  expect(snapshot.credits).toBeNull();
 });
 
 it('accepts healthy metadata commands that complete just beyond ten seconds', async () => {
@@ -124,8 +159,10 @@ it('fails disconnected without exposing CLI errors or inventing records', async 
   expect(snapshot.status).toBe('disconnected');
   expect(snapshot.wakers).toEqual([]);
   expect(snapshot.tasks).toEqual([]);
+  expect(snapshot.wakerTasks).toEqual([]);
   expect(snapshot.activities).toEqual([]);
   expect(snapshot.daemon).toBeNull();
+  expect(snapshot.credits).toBeNull();
   expect(JSON.stringify(snapshot)).not.toContain('private credential');
 });
 
@@ -135,12 +172,12 @@ it('fails disconnected when the observed response does not match its schema', as
   expect(snapshot.version).toBeNull();
 });
 
-it('expires successful checks at 60 seconds and never treats invalid or future checks as current', async () => {
+it('expires successful checks at 5 minutes and never treats invalid or future checks as current', async () => {
   const snapshot = await createQoderWakeReader(fixtureCommand([]))();
   snapshot.checkedAt = '2026-11-20T07:00:00.000Z';
   const now = Date.parse(snapshot.checkedAt);
-  expect(snapshotFreshness(snapshot, now + 59999)).toBe('fresh');
-  expect(snapshotFreshness(snapshot, now + 60000)).toBe('stale');
+  expect(snapshotFreshness(snapshot, now + 299999)).toBe('fresh');
+  expect(snapshotFreshness(snapshot, now + 300000)).toBe('stale');
   expect(snapshotFreshness({ ...snapshot, checkedAt: 'invalid' }, now)).toBe('stale');
   expect(snapshotFreshness(snapshot, now - 1)).toBe('stale');
   expect(snapshotFreshness({ ...snapshot, status: 'disconnected' }, now)).toBe('disconnected');
@@ -151,7 +188,7 @@ it('permits idle only with a fresh, complete snapshot and no task or open sessio
   snapshot.wakers[0].taskCount = 0;
   const now = Date.parse(snapshot.checkedAt);
   expect(wakerWorkState(snapshot, waker.agentId, now)).toBe('idle');
-  expect(wakerWorkState(snapshot, waker.agentId, now + 60000)).toBe('unknown');
+  expect(wakerWorkState(snapshot, waker.agentId, now + 300000)).toBe('unknown');
   expect(wakerWorkState({ ...snapshot, status: 'disconnected' }, waker.name, now)).toBe('unknown');
   expect(wakerWorkState({ ...snapshot, board: { ...snapshot.board!, total: 51 } }, waker.name, now)).toBe('unknown');
   expect(wakerWorkState({ ...snapshot, wakers: [...snapshot.wakers, snapshot.wakers[0]] }, waker.name, now)).toBe('unknown');
@@ -239,6 +276,6 @@ it('returns unknown for an unmatched, stale, or disconnected native status', asy
   const snapshot = await createQoderWakeReader(fixtureCommand([]))();
   const now = Date.parse(snapshot.checkedAt);
   expect(wakerDisplayStatus(snapshot, waker.name, now)).toEqual({ kind: 'unknown', label: 'Waker tidak ditemukan' });
-  expect(wakerDisplayStatus(snapshot, 'agent-pm', now + 60_000)).toEqual({ kind: 'unknown', label: 'Kedaluwarsa · status tidak diketahui' });
+  expect(wakerDisplayStatus(snapshot, 'agent-pm', now + 300_000)).toEqual({ kind: 'unknown', label: 'Kedaluwarsa · status tidak diketahui' });
   expect(wakerDisplayStatus({ ...snapshot, status: 'disconnected' }, 'agent-pm', now)).toEqual({ kind: 'unknown', label: 'Koneksi terputus · status tidak diketahui' });
 });

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+z.config({ jitless: true });
+
 export type QoderWakeWaker = {
   id: string;
   name: string;
@@ -37,6 +39,14 @@ export type QoderWakeActivity = {
   scenario: string | null;
 };
 
+export type QoderWakeCredits = {
+  total: number;
+  used: number;
+  remaining: number;
+  percentage: number;
+  unit: string;
+};
+
 export type QoderWakeSnapshot = {
   status: 'live' | 'disconnected';
   checkedAt: string;
@@ -62,12 +72,26 @@ export type QoderWakeSnapshot = {
   } | null;
   wakers: QoderWakeWaker[];
   tasks: QoderWakeTask[];
+  wakerTasks?: QoderWakeTask[];
   activities: QoderWakeActivity[];
+  credits?: QoderWakeCredits | null;
   message: string | null;
 };
 
 const timestamp = z.string().refine(value => Number.isFinite(Date.parse(value)));
 const count = z.number().int().nonnegative();
+const taskItemSchema = z.object({
+  id: z.string(), title: z.string(), type: z.string(), status: z.string(), rawStatus: z.string(),
+  assigneeId: z.string().nullable(), assigneeName: z.string().nullable(), sourceType: z.string(), sourceName: z.string(),
+  updatedAt: timestamp, lastActiveAt: timestamp,
+});
+const creditsSchema = z.object({
+  total: count,
+  used: count,
+  remaining: count,
+  percentage: z.number().min(0).max(1),
+  unit: z.string().min(1).max(30),
+});
 const snapshotSchema = z.object({
   status: z.enum(['live', 'disconnected']), checkedAt: timestamp, version: z.string().nullable(),
   daemon: z.object({ deviceStatus: z.string(), sessionsTotal: count, sessionsRunning: count, agentCount: count }).nullable(),
@@ -79,15 +103,13 @@ const snapshotSchema = z.object({
     id: z.string(), name: z.string(), status: z.string(), executionLocation: z.string(),
     onlineStatus: z.string().nullable(), connectionStatus: z.string().nullable(), sessionCount: count, taskCount: count,
   })),
-  tasks: z.array(z.object({
-    id: z.string(), title: z.string(), type: z.string(), status: z.string(), rawStatus: z.string(),
-    assigneeId: z.string().nullable(), assigneeName: z.string().nullable(), sourceType: z.string(), sourceName: z.string(),
-    updatedAt: timestamp, lastActiveAt: timestamp,
-  })),
+  tasks: z.array(taskItemSchema),
+  wakerTasks: z.array(taskItemSchema).optional(),
   activities: z.array(z.object({
     id: z.string(), wakerId: z.string(), title: z.string(), status: z.string(), startedAt: timestamp,
     lastActiveAt: timestamp, endedAt: timestamp.nullable(), source: z.string().nullable(), scenario: z.string().nullable(),
   })),
+  credits: creditsSchema.nullable().optional(),
   message: z.string().nullable(),
 }).refine(value => value.status === 'disconnected' || (value.version !== null && value.daemon !== null && value.board !== null));
 
@@ -95,7 +117,7 @@ export function isQoderWakeSnapshot(value: unknown): value is QoderWakeSnapshot 
   return snapshotSchema.safeParse(value).success;
 }
 
-export const SNAPSHOT_MAX_AGE_MS = 60_000;
+export const SNAPSHOT_MAX_AGE_MS = 300_000;
 export type SnapshotFreshness = 'fresh' | 'stale' | 'disconnected';
 export type WakerWorkState = 'idle' | 'active' | 'unknown';
 export const activeTaskStatuses = new Set(['running', 'pending', 'waiting']);
@@ -112,14 +134,19 @@ export type WakerDisplayStatus = {
   label: string;
 };
 
+export function wakerAssignedTasks(snapshot: QoderWakeSnapshot, wakerId: string): QoderWakeTask[] {
+  return [...snapshot.tasks, ...(snapshot.wakerTasks ?? [])]
+    .filter(task => task.assigneeId === wakerId)
+    .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
+}
+
 export function wakerDisplayStatus(snapshot: QoderWakeSnapshot, wakerId: string, now: number): WakerDisplayStatus {
   const freshness = snapshotFreshness(snapshot, now);
   if (freshness === 'disconnected') return { kind: 'unknown', label: 'Koneksi terputus · status tidak diketahui' };
   if (freshness === 'stale') return { kind: 'unknown', label: 'Kedaluwarsa · status tidak diketahui' };
   const waker = matchWakerById(snapshot.wakers, wakerId);
   if (!waker) return { kind: 'unknown', label: 'Waker tidak ditemukan' };
-  const tasks = snapshot.tasks.filter(task => task.assigneeId === waker.id)
-    .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
+  const tasks = wakerAssignedTasks(snapshot, waker.id);
   const current = tasks.find(task => activeTaskStatuses.has(task.status));
   if (current?.status === 'running') return { kind: 'working', label: 'Bekerja · running' };
   if (current) {
@@ -129,8 +156,10 @@ export function wakerDisplayStatus(snapshot: QoderWakeSnapshot, wakerId: string,
   if (snapshot.activities.some(activity => activity.wakerId === waker.id && activity.status === 'running')) {
     return { kind: 'working', label: 'Bekerja · sesi running' };
   }
-  const latestTerminal = tasks.find(task => terminalTaskStatuses.has(task.status));
-  if (latestTerminal?.status === 'done') return { kind: 'done', label: 'Task selesai · done' };
+  const latestDirectTerminal = snapshot.tasks
+    .filter(task => task.assigneeId === waker.id && terminalTaskStatuses.has(task.status))
+    .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt))[0];
+  if (latestDirectTerminal?.status === 'done') return { kind: 'done', label: 'Task selesai · done' };
   if (waker.status === 'online' && waker.onlineStatus === 'online' && waker.connectionStatus === 'connected') {
     return { kind: 'online', label: 'Online' };
   }
@@ -141,7 +170,7 @@ export function wakerWorkState(snapshot: QoderWakeSnapshot, wakerId: string, now
   if (snapshotFreshness(snapshot, now) !== 'fresh') return 'unknown';
   const waker = matchWakerById(snapshot.wakers, wakerId);
   if (!waker) return 'unknown';
-  const tasks = snapshot.tasks.filter(task => task.assigneeId === waker.id);
+  const tasks = wakerAssignedTasks(snapshot, waker.id);
   if (tasks.some(task => activeTaskStatuses.has(task.status))) return 'active';
   const sessions = snapshot.activities.filter(activity => activity.wakerId === waker.id);
   if (waker.status !== 'online' || waker.onlineStatus !== 'online' || waker.connectionStatus !== 'connected'

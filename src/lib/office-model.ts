@@ -33,6 +33,7 @@ const palette = {
   glass: material('#a8cabe', { opacity: .16, roughness: .12 }),
   screen: material('#2f5548', { emissive: '#315c4b', roughness: .28 }),
   white: material('#f7f6ef'), water: material('#9dbfba', { roughness: .2 }),
+  window: material('#9dbfba', { roughness: .2 }),
   leaf: material('#527551'), leafLight: material('#829c6b'), soil: material('#594b3b'),
   light: material('#ffe2a0', { emissive: '#ffd283' }),
 };
@@ -387,7 +388,7 @@ export function createOfficeModel(): OfficeModel {
   box(root, 'left-skirting', [.08, .18, 18.8], [-12.87, .13, 0], palette.woodLight);
   for (const x of [-9.6, -6.3, 4.8, 8.1]) {
     box(root, 'window-frame', [2.45, 1.45, .09], [x, 1.65, -9.31], palette.sageDark, .015);
-    box(root, 'window', [2.27, 1.28, .035], [x, 1.65, -9.25], palette.water);
+    box(root, 'window', [2.27, 1.28, .035], [x, 1.65, -9.25], palette.window);
     box(root, 'window-cross', [.045, 1.3, .045], [x, 1.65, -9.2], palette.cream);
     box(root, 'window-cross', [2.3, .045, .045], [x, 1.65, -9.2], palette.cream);
   }

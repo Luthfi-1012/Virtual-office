@@ -90,12 +90,12 @@ test('caps canvas pixel density on high-DPI displays', async ({ browser, baseURL
   }
 });
 
-test('auto-starts varied offline activities, proves poses and movement, and honors pause stop and reduced motion', async ({ page }, testInfo) => {
+test('runs realtime 4-agent activities without simulation buttons and honors reduced motion automatically', async ({ page }, testInfo) => {
   test.setTimeout(90000);
   await page.route('**/api/qoderwake', route => route.fulfill({ json: {
     status: 'disconnected', checkedAt: new Date().toISOString(), version: null,
-    daemon: null, board: null, wakers: [], tasks: [], activities: [],
-    message: 'Fixture simulasi: status native tidak dibaca.',
+    daemon: null, board: null, wakers: [], tasks: [], wakerTasks: [], activities: [], credits: null,
+    message: 'Fixture offline: status native tidak dibaca.',
   } }));
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -105,41 +105,33 @@ test('auto-starts varied offline activities, proves poses and movement, and hono
   const canvas = page.locator('canvas[data-engine="three.js"]');
   await expect(canvas).toHaveAttribute('data-scene-ready', 'true', { timeout: 30000 });
   await expect(canvas).toHaveAttribute('data-motion-running', 'true');
-  await expect(page.getByText('Simulasi kantor', { exact: true })).toBeVisible();
-  const hint = page.getByTestId('simulation-hint');
-  await expect(hint).toContainText('simulasi kantor lokal');
-  await expect(hint).toContainText('4 agent bekerja di meja');
-  await expect(page.getByTestId('native-status')).toHaveText('Koneksi terputus · status tidak diketahui');
+  await expect(page.getByRole('button', { name: /lanjut simulasi/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /hentikan semua/i })).toHaveCount(0);
+
+  const liveActivity = page.getByTestId('live-activity');
+  await expect(liveActivity).toBeVisible();
+  await expect(liveActivity).toContainText('agent bekerja di meja');
+
   const hotspot = page.getByRole('button', { name: 'Pilih Project Manager / Orchestrator', exact: true });
   const initial = await hotspot.getAttribute('style');
   await expect.poll(() => hotspot.getAttribute('style')).not.toBe(initial);
-  await page.waitForLoadState('networkidle');
-  await expect.poll(() => hint.textContent(), { timeout: 45000 }).toMatch(/Minum kopi di pantry · Bermain konsol di lounge/);
+
+  await expect.poll(() => liveActivity.textContent(), { timeout: 45000 }).toMatch(/4 agent bekerja di meja/);
   const hotspots = page.locator('.agent-hotspot');
   const firstStyles = await hotspots.evaluateAll(elements => elements.map(element => element.getAttribute('style')));
-  const firstHint = await hint.textContent();
+  const firstActivity = await liveActivity.textContent();
   const first = await page.screenshot({ path: testInfo.outputPath('office-activities-before.png') });
-  await page.waitForTimeout(12000);
+  await page.waitForTimeout(10000);
   const second = await page.screenshot({ path: testInfo.outputPath('office-activities-after.png') });
   expect(second.equals(first)).toBe(false);
   const secondStyles = await hotspots.evaluateAll(elements => elements.map(element => element.getAttribute('style')));
   expect(secondStyles.filter((style, index) => style !== firstStyles[index]).length).toBeGreaterThanOrEqual(2);
-  expect(await hint.textContent()).not.toBe(firstHint);
+  expect(await liveActivity.textContent()).not.toBe(firstActivity);
 
-  await page.getByRole('button', { name: 'Jeda simulasi kantor', exact: true }).click();
-  await expect(canvas).toHaveAttribute('data-motion-running', 'false');
-  const paused = await hotspot.getAttribute('style');
-  await page.waitForTimeout(120);
-  expect(await hotspot.getAttribute('style')).toBe(paused);
-  await page.getByRole('button', { name: 'Lanjutkan simulasi kantor', exact: true }).click();
-  await expect(canvas).toHaveAttribute('data-motion-running', 'true');
-  await page.getByRole('button', { name: 'Hentikan semua gerakan simulasi', exact: true }).click();
-  await expect(canvas).toHaveAttribute('data-motion-running', 'false');
-  const stopped = await hotspot.getAttribute('style');
-  await page.waitForTimeout(250);
-  expect(await hotspot.getAttribute('style')).toBe(stopped);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.getByRole('button', { name: 'Lanjutkan simulasi kantor', exact: true })).toBeDisabled();
-  await expect(page.getByTestId('simulation-hint')).toHaveText('Preferensi kurangi gerak aktif.');
+  await expect(canvas).toHaveAttribute('data-motion-running', 'false');
+  await expect(liveActivity).toHaveText('Preferensi kurangi gerak aktif.');
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect(canvas).toHaveAttribute('data-motion-running', 'true');
   expect(errors).toEqual([]);
 });

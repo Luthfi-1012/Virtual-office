@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+z.config({ jitless: true });
+
 const text = (max: number) => z.string().trim().min(1, 'Wajib diisi.').max(max, `Maksimal ${max} karakter.`);
 const amount = z.number().int().min(0).max(100_000_000);
 export const briefSchema = z.strictObject({

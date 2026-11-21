@@ -58,8 +58,18 @@ export function createOfficeApi(
         || !timingSafeEqual(Buffer.from(csrf), Buffer.from(token))) throw new HttpError(403, 'Sesi kedaluwarsa. Muat ulang koneksi lokal.');
       if (url.pathname === '/api/qoderwake/workflow') {
         if (!workflow) throw new HttpError(503, 'Integrasi WakerFlow belum tersedia.');
-        if (request.method === 'GET') return json(await workflow.status());
-        if (request.method === 'POST') return json(await workflow.submit(await readBody(request)));
+        if (request.method === 'GET') return json(await workflow.status(url.searchParams.get('runId') ?? undefined));
+        if (request.method === 'POST') {
+          const body = await readBody(request);
+          if (body && typeof body === 'object' && 'action' in body) {
+            if (body.action === 'confirm') return json(await workflow.confirm(body));
+            if (body.action === 'terminate') return json(await workflow.terminate(body));
+            if (body.action === 'retry') return json(await workflow.retry(body));
+            if (body.action === 'interrupt_session') return json(await workflow.interruptSession(body));
+            throw new HttpError(400, 'Operasi WakerFlow tidak dikenal.');
+          }
+          return json(await workflow.submit(body));
+        }
         throw new HttpError(405, 'Metode tidak tersedia.');
       }
       if (url.pathname === '/api/qoderwake' && request.method === 'GET') return json(await readNative());

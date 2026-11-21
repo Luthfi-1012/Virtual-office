@@ -22,15 +22,15 @@ export function BriefForm({ initial, busy, submitBlocked = false, nativeSubmitBl
     }}>
       {Object.keys(errors).length > 0 && <p className="notice error" role="alert">Lengkapi field yang ditandai. Tidak ada proses baru.</p>}
       <fieldset disabled={busy}><legend className="sr-only">Brief preview</legend><div className="form-grid">
-        {(Object.entries(labels) as [keyof typeof labels, string][]).map(([key, label]) => <label key={key} className={key === 'description' ? 'wide' : ''}>{label}
-          {key === 'description' ? <textarea value={value[key]} maxLength={800} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `error-${key}` : undefined} onChange={event => setValue({ ...value, [key]: event.target.value })}/> : <input value={value[key]} maxLength={{ client: 60, tagline: 120, audience: 180, location: 160, hours: 100 }[key]} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `error-${key}` : undefined} onChange={event => setValue({ ...value, [key]: event.target.value })}/>}
+        {(Object.entries(labels) as [keyof typeof labels, string][]).map(([key, label]) => <label key={key} htmlFor={`brief-${key}`} className={key === 'description' ? 'wide' : ''}>{label}
+          {key === 'description' ? <textarea id={`brief-${key}`} name={key} value={value[key]} maxLength={800} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `error-${key}` : undefined} onChange={event => setValue({ ...value, [key]: event.target.value })}/> : <input id={`brief-${key}`} name={key} value={value[key]} maxLength={{ client: 60, tagline: 120, audience: 180, location: 160, hours: 100 }[key]} aria-invalid={!!errors[key]} aria-describedby={errors[key] ? `error-${key}` : undefined} onChange={event => setValue({ ...value, [key]: event.target.value })}/>}
           {errors[key] && <span id={`error-${key}`} className="field-error">{errors[key]}</span>}
         </label>)}
       </div>
       <h3>Menu contoh</h3><p className="muted">Harga menu bukan biaya jasa pada invoice simulasi.</p>
       {value.menu.map((item, index) => <div className="menu-row" key={index}>
-        <label>Nama menu {index+1}<input value={item.name} maxLength={60} aria-invalid={!!errors[`menu.${index}.name`]} onChange={event => setValue({ ...value, menu: value.menu.map((row, i) => i === index ? { ...row, name: event.target.value } : row) })}/></label>
-        <label>Harga menu {index+1} (Rp)<input type="number" min="0" max="100000000" step="1" value={item.price} aria-invalid={!!errors[`menu.${index}.price`]} onChange={event => setValue({ ...value, menu: value.menu.map((row, i) => i === index ? { ...row, price: Number(event.target.value) } : row) })}/></label>
+        <label htmlFor={`menu-name-${index}`}>Nama menu {index+1}<input id={`menu-name-${index}`} name={`menuName${index}`} value={item.name} maxLength={60} aria-invalid={!!errors[`menu.${index}.name`]} onChange={event => setValue({ ...value, menu: value.menu.map((row, i) => i === index ? { ...row, name: event.target.value } : row) })}/></label>
+        <label htmlFor={`menu-price-${index}`}>Harga menu {index+1} (Rp)<input id={`menu-price-${index}`} name={`menuPrice${index}`} type="number" min="0" max="100000000" step="1" value={item.price} aria-invalid={!!errors[`menu.${index}.price`]} onChange={event => setValue({ ...value, menu: value.menu.map((row, i) => i === index ? { ...row, price: Number(event.target.value) } : row) })}/></label>
         <button type="button" aria-label={`Hapus menu ${index+1}`} disabled={value.menu.length === 1} onClick={() => setValue({ ...value, menu: value.menu.filter((_, i) => i !== index) })}>Hapus</button>
       </div>)}
       <button type="button" disabled={value.menu.length === 6} onClick={() => setValue({ ...value, menu: [...value.menu, { name: '', price: 0 }] })}>Tambah menu</button>

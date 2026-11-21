@@ -62,11 +62,12 @@ it('validates the complete browser payload before any dispatch', async () => {
 it('returns actual run status, worker order and founder gate without conversation or result bodies', async () => {
   const command = vi.fn<QoderWakeCommand>().mockImplementation(async args => {
     if (args[1] === 'run') return dispatch;
+    if (args[0] === 'board') return { items: [] };
     if (args[1] === 'run-get') return {
       runId, workflowId: WORKFLOW_ID, status: 'waiting_confirmation', currentPhase: 'Penyelesaian', startedAt: '2026-11-20T11:00:00Z', finishedAt: null,
       events: [
-        { seq: 1, kind: 'worker.dispatched', correlationId: 'a', status: 'dispatched', createdAt: '2026-11-20T11:00:01Z', payload: { label: 'Susun paket ringkasan internal', phase: 'Penyelesaian', instruction: 'private' } },
-        { seq: 2, kind: 'worker.completed', correlationId: 'a', status: 'completed', createdAt: '2026-11-20T11:00:02Z', payload: { label: 'Susun paket ringkasan internal', phase: 'Penyelesaian', result: { next_owner: 'Billing Agent', deliverable: 'private' } } },
+        { seq: 1, kind: 'worker.dispatched', correlationId: 'a', status: 'dispatched', createdAt: '2026-11-20T11:00:01Z', payload: { label: 'Susun paket ringkasan internal', phase: 'Penyelesaian', resolve: { kind: 'waker', wakerId: '7e1da47da422' }, instruction: 'private' } },
+        { seq: 2, kind: 'worker.completed', correlationId: 'a', status: 'completed', createdAt: '2026-11-20T11:00:02Z', payload: { label: 'Susun paket ringkasan internal', phase: 'Penyelesaian', result: { next_owner: 'Billing Agent', summary: 'Ringkasan internal disusun.', issues: [{ title: 'minor' }], deliverable: 'private' } } },
         { seq: 3, kind: 'ask_user.pending', correlationId: 'b', status: 'pending', createdAt: '2026-11-20T11:00:03Z', payload: { confirmationId: 'gate-1', question: 'private' } },
       ], pendingConfirmations: [{ confirmationId: 'gate-1', question: 'private' }],
     };
@@ -79,7 +80,53 @@ it('returns actual run status, worker order and founder gate without conversatio
   expect(status.run?.runId).toBe(runId);
   expect(status.gate).toBe('waiting_for_founder');
   expect(status.pendingConfirmations).toEqual(['gate-1']);
-  expect(status.workers).toEqual([{ sequence: 1, phase: 'Penyelesaian', label: 'Susun paket ringkasan internal', status: 'completed', nextOwner: 'Billing Agent', updatedAt: '2026-11-20T11:00:02Z' }]);
+  expect(status.workers).toEqual([{
+    sequence: 1, phase: 'Penyelesaian', label: 'Susun paket ringkasan internal', wakerId: '7e1da47da422',
+    status: 'completed', nextOwner: 'Billing Agent', summary: 'Ringkasan internal disusun.', issueCount: 1, updatedAt: '2026-11-20T11:00:02Z',
+  }]);
   expect(JSON.stringify(status)).not.toContain('private');
-  expect(command.mock.calls.map(call => call[0].slice(0, 2))).toEqual([['workflow', 'run'], ['workflow', 'run-get'], ['workflow', 'confirmations']]);
+  expect(command.mock.calls.map(call => call[0].slice(0, 2))).toEqual([
+    ['workflow', 'run'], ['board', 'tasks'], ['workflow', 'run-get'], ['workflow', 'confirmations'],
+  ]);
+});
+
+it('auto-discovers historical WakerFlow V13 runs from board tasks and executes native control commands', async () => {
+  const boardRunId = 'c7bb61c3-b55b-4bca-b8a0-b576c49fecdf';
+  const command = vi.fn<QoderWakeCommand>().mockImplementation(async args => {
+    if (args[0] === 'board') return {
+      items: [{
+        sourceTaskId: boardRunId, title: '第 7 次运行', type: 'wakerflow_task', status: 'done', rawStatus: 'succeeded',
+        assignee: { id: `wakerflow:${WORKFLOW_ID}`, name: 'Web Delivery Studio — Website Delivery' },
+        source: { id: WORKFLOW_ID, name: 'Web Delivery Studio — Website Delivery' },
+        lastActiveAt: '2026-11-20T19:32:50.064+07:00',
+      }],
+    };
+    if (args[1] === 'run-get') return {
+      runId: boardRunId, workflowId: WORKFLOW_ID, status: 'succeeded', currentPhase: 'Penyelesaian',
+      startedAt: '2026-11-20T19:13:23.455+07:00', finishedAt: '2026-11-20T19:32:50.064+07:00',
+      events: [
+        { seq: 52, kind: 'ask_user.answered', correlationId: 'gate', status: 'completed', createdAt: '2026-11-20T12:32:13.139Z', payload: { confirmationId: 'conf-1', answer: { value: 'Setujui paket internal akhir', answeredAt: '2026-11-20T12:32:13.139Z' } } },
+        { seq: 60, kind: 'run.final', correlationId: 'run', status: 'completed', createdAt: '2026-11-20T19:32:50.064+07:00', payload: { outcome: 'succeeded', return: { summary: 'Approval founder tercatat; paket internal disetujui.' } } },
+      ],
+      pendingConfirmations: [],
+    };
+    if (args[1] === 'confirmations') return [];
+    return { ok: true };
+  });
+  const service = createWorkflowService(db, command);
+  const status = await service.status();
+  expect(status.gate).toBe('finished');
+  expect(status.run?.title).toBe('第 7 次运行');
+  expect(status.founderApproval?.value).toBe('Setujui paket internal akhir');
+  expect(status.finalSummary).toBe('Approval founder tercatat; paket internal disetujui.');
+  expect(status.recentRuns).toHaveLength(1);
+
+  await service.confirm({ action: 'confirm', runId: boardRunId, confirmationId: 'conf-1', value: 'Setujui paket internal akhir' });
+  await service.terminate({ action: 'terminate', runId: boardRunId });
+  await service.retry({ action: 'retry', runId: boardRunId });
+  await service.interruptSession({ action: 'interrupt_session', sessionId: 'sess-1' });
+  expect(command).toHaveBeenCalledWith(['workflow', 'confirm', boardRunId, 'conf-1', '--value', 'Setujui paket internal akhir', '--json']);
+  expect(command).toHaveBeenCalledWith(['workflow', 'run-terminate', boardRunId, '--json']);
+  expect(command).toHaveBeenCalledWith(['workflow', 'run-retry', boardRunId, '--json']);
+  expect(command).toHaveBeenCalledWith(['session', 'interrupt', '--session-id', 'sess-1', '--json']);
 });

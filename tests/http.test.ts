@@ -59,3 +59,26 @@ it('reports validation fields and storage errors without leaking database detail
   expect(failed.status).toBe(503);
   expect(JSON.stringify(await failed.json())).not.toMatch(/sqlite|readonly|SELECT|INSERT/i);
 });
+
+it('dispatches workflow control actions when workflow service is configured', async () => {
+  const workflowCalls: string[] = [];
+  const fakeWorkflow = {
+    status: async (runId?: string) => { workflowCalls.push(`status:${runId ?? ''}`); return { request: null, run: null, workers: [], pendingConfirmations: [], founderApproval: null, finalSummary: null, recentRuns: [], gate: 'not_started' as const }; },
+    submit: async () => ({ runId: 'r1', reused: false }),
+    confirm: async () => { workflowCalls.push('confirm'); return { ok: true as const, action: 'confirm' as const, runId: 'r1', confirmationId: 'c1' }; },
+    terminate: async () => { workflowCalls.push('terminate'); return { ok: true as const, action: 'terminate' as const, runId: 'r1' }; },
+    retry: async () => { workflowCalls.push('retry'); return { ok: true as const, action: 'retry' as const, runId: 'r1' }; },
+    interruptSession: async () => { workflowCalls.push('interrupt_session'); return { ok: true as const, action: 'interrupt_session' as const, sessionId: 's1' }; },
+  };
+  const wired = createOfficeApi(new OfficeStore(db), async () => nativeSnapshot, fakeWorkflow);
+  const s = await wired(new Request(`${origin}/api/session`, { headers: { host: '127.0.0.1:3000', 'x-office-client': 'local', 'sec-fetch-site': 'same-origin' } }));
+  const { csrf } = await s.json();
+  const h = { host: '127.0.0.1:3000', origin, 'content-type': 'application/json', 'x-office-csrf': csrf, cookie: s.headers.get('set-cookie')!.split(';')[0] };
+
+  expect((await wired(new Request(`${origin}/api/qoderwake/workflow?runId=123`, { headers: h }))).status).toBe(200);
+  for (const action of ['confirm', 'terminate', 'retry', 'interrupt_session']) {
+    expect((await wired(new Request(`${origin}/api/qoderwake/workflow`, { method: 'POST', headers: h, body: JSON.stringify({ action }) }))).status).toBe(200);
+  }
+  expect((await wired(new Request(`${origin}/api/qoderwake/workflow`, { method: 'POST', headers: h, body: JSON.stringify({ action: 'bad' }) }))).status).toBe(400);
+  expect(workflowCalls).toEqual(['status:123', 'confirm', 'terminate', 'retry', 'interrupt_session']);
+});

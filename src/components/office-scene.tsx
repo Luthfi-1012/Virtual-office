@@ -1,15 +1,15 @@
 'use client';
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import {
-  AmbientLight, Box3, Color, DirectionalLight, HemisphereLight, Mesh, MeshBasicMaterial,
-  OrthographicCamera, PCFShadowMap, Raycaster, RingGeometry, Scene, SRGBColorSpace,
+  AmbientLight, Box3, Color, DirectionalLight, HemisphereLight, Mesh, MeshBasicMaterial, MeshStandardMaterial,
+  OrthographicCamera, PCFShadowMap, PointLight, Raycaster, RingGeometry, Scene, SRGBColorSpace,
   Vector2, Vector3, WebGLRenderer, ACESFilmicToneMapping,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { agents } from '@/lib/agents';
 import type { WakerDisplayStatus } from '@/lib/qoderwake';
 import { createOfficeModel, disposeOfficeModel } from '@/lib/office-model';
-import { createOfficeMotion } from '@/lib/office-motion';
+import { createOfficeMotion, type ProjectStage } from '@/lib/office-motion';
 
 export type OfficeSceneHandle = {
   zoomIn: () => void;
@@ -25,6 +25,8 @@ type Props = {
   eligibleAgents: readonly string[];
   wakerStatuses: Readonly<Record<string, WakerDisplayStatus>>;
   snapshotExpiresAt: number;
+  theme?: 'light' | 'dark';
+  projectStage?: ProjectStage | null;
   onActivityChange: (activity: string | null, blocked: boolean) => void;
   onSelect: (id: string) => void;
   onZoomChange: (zoom: number) => void;
@@ -32,9 +34,10 @@ type Props = {
   onMotionChange: (running: boolean) => void;
 };
 const isoOffset = new Vector3(25, 27, 31);
-const roomAnchors = { development: new Vector3(-6.45, 3.15, -8.75), delivery: new Vector3(6.4, 3.15, -8.75) };
+const defaultTarget = new Vector3(0, .85, 0);
+const roomAnchors = { development: new Vector3(-5.8, 3.6, -9.35), delivery: new Vector3(5.4, 3.6, -9.35) };
 
-export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeScene({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, onActivityChange, onSelect, onZoomChange, onFallback, onMotionChange }, ref) {
+export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeScene({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, theme = 'light', projectStage = null, onActivityChange, onSelect, onZoomChange, onFallback, onMotionChange }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectedRef = useRef(selected);
@@ -45,9 +48,11 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
   const renderScene = useRef<() => void>(() => {});
   const callbacks = useRef({ onSelect, onZoomChange, onFallback, onMotionChange, onActivityChange });
   callbacks.current = { onSelect, onZoomChange, onFallback, onMotionChange, onActivityChange };
-  const motionPolicy = useRef({ eligibleAgents, snapshotExpiresAt });
-  motionPolicy.current = { eligibleAgents, snapshotExpiresAt };
+  const motionPolicy = useRef({ eligibleAgents, snapshotExpiresAt, projectStage });
+  motionPolicy.current = { eligibleAgents, snapshotExpiresAt, projectStage };
   const syncMotionPolicy = useRef<() => void>(() => {});
+  const applyThemeRef = useRef<(mode: 'light' | 'dark') => void>(() => {});
+  const applyProjectStageRef = useRef<(stage: ProjectStage | null) => void>(() => {});
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
   const [motionRunning, setMotionRunning] = useState(false);
@@ -83,14 +88,15 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
     renderer.shadowMap.type = PCFShadowMap;
 
     const scene = new Scene();
-    scene.background = new Color('#e8ece3');
+    scene.background = new Color('#eef1f5');
     const model = createOfficeModel();
     const motion = createOfficeMotion(model);
     scene.add(model.root);
-    scene.add(new AmbientLight('#fff6e7', .35));
-    const hemisphere = new HemisphereLight('#f7fbf3', '#a8a18c', .65);
+    const ambient = new AmbientLight('#ffffff', .42);
+    scene.add(ambient);
+    const hemisphere = new HemisphereLight('#f8fafc', '#cbd5e1', .62);
     scene.add(hemisphere);
-    const daylight = new DirectionalLight('#fff2d8', 2.45);
+    const daylight = new DirectionalLight('#fff8eb', 2.35);
     daylight.position.set(-13, 24, 16);
     daylight.castShadow = true;
     daylight.shadow.mapSize.set(1024, 1024);
@@ -103,14 +109,31 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
     daylight.shadow.bias = -.00025;
     daylight.shadow.normalBias = .035;
     scene.add(daylight);
+    const interiorLights = [
+      [-7, 2.35, -4], [6.3, 2.35, -4], [-4.2, 2.35, 5.4], [5.7, 2.35, 5.3], [3.9, 1.85, 7.55],
+    ].map(([lx, ly, lz]) => {
+      const pointLight = new PointLight('#ffcb7d', 0, 15, 1.6);
+      pointLight.position.set(lx, ly, lz);
+      scene.add(pointLight);
+      return pointLight;
+    });
+    const screenMaterials = new Set<MeshStandardMaterial>();
+    const lampMaterials = new Set<MeshStandardMaterial>();
+    const windowMaterials = new Set<MeshStandardMaterial>();
+    model.root.traverse(obj => {
+      if (!(obj instanceof Mesh) || !(obj.material instanceof MeshStandardMaterial)) return;
+      if (['screen', 'second-screen', 'laptop-screen', 'tv-screen'].includes(obj.name)) screenMaterials.add(obj.material);
+      else if (['pendant-glow', 'lamp-shade'].includes(obj.name)) lampMaterials.add(obj.material);
+      else if (obj.name === 'window') windowMaterials.add(obj.material);
+    });
 
     const aspect = Math.max(container.clientWidth / Math.max(container.clientHeight, 1), .5);
-    const frustum = Math.max(24.5, 32 / aspect);
+    const frustum = Math.max(26.5, 34.5 / aspect);
     const camera = new OrthographicCamera(-frustum * aspect / 2, frustum * aspect / 2, frustum / 2, -frustum / 2, .1, 140);
-    camera.position.copy(isoOffset);
-    camera.lookAt(0, 0, 0);
+    camera.position.copy(isoOffset).add(defaultTarget);
+    camera.lookAt(defaultTarget);
     const controls = new OrbitControls(camera, canvas);
-    controls.target.set(0, .4, 0);
+    controls.target.copy(defaultTarget);
     controls.enableDamping = false;
     controls.rotateSpeed = .55;
     controls.zoomSpeed = .75;
@@ -121,7 +144,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
     controls.maxPolarAngle = Math.PI / 2.25;
     controls.update();
 
-    const selection = new Mesh(new RingGeometry(.52, .64, 40), new MeshBasicMaterial({ color: '#28634f', transparent: true, opacity: .9, depthWrite: false }));
+    const selection = new Mesh(new RingGeometry(.52, .64, 40), new MeshBasicMaterial({ color: '#0f766e', transparent: true, opacity: .9, depthWrite: false }));
     selection.rotation.x = -Math.PI / 2;
     selection.position.y = .105;
     selection.visible = false;
@@ -155,7 +178,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       const width = Math.max(container.clientWidth, 1);
       const height = Math.max(container.clientHeight, 1);
       const nextAspect = width / height;
-      const nextFrustum = Math.max(24.5, 32 / nextAspect);
+      const nextFrustum = Math.max(26.5, 34.5 / nextAspect);
       camera.left = -nextFrustum * nextAspect / 2;
       camera.right = nextFrustum * nextAspect / 2;
       camera.top = nextFrustum / 2;
@@ -193,7 +216,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       render();
     };
     const fit = () => {
-      controls.target.set(0, .4, 0);
+      controls.target.copy(defaultTarget);
       camera.position.copy(isoOffset).add(controls.target);
       camera.up.set(0, 1, 0);
       camera.lookAt(controls.target);
@@ -226,11 +249,56 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       reportMotion();
       render();
     };
+    const startMotion = () => {
+      motion.setEligibleAgents(motionPolicy.current.eligibleAgents);
+      if (motion.running || reducedMotion.matches || document.hidden) return;
+      motion.start();
+      reportMotion();
+      render();
+      if (!motion.running) return;
+      lastFrameTime = 0;
+      animationFrame = requestAnimationFrame(tick);
+    };
     const syncPolicy = () => {
       motion.setEligibleAgents(motionPolicy.current.eligibleAgents);
       if (reducedMotion.matches || document.hidden) stopMotion();
-      reportMotion();
+      else if (!motion.running && (motionPolicy.current.eligibleAgents.length > 0 || motionPolicy.current.projectStage !== null)) startMotion();
+      else reportMotion();
     };
+    applyThemeRef.current = mode => {
+      const dark = mode === 'dark';
+      scene.background = new Color(dark ? '#0d121a' : '#eef1f5');
+      ambient.color.set(dark ? '#7c96c2' : '#ffffff');
+      ambient.intensity = dark ? .24 : .42;
+      hemisphere.color.set(dark ? '#3b4e73' : '#f8fafc');
+      hemisphere.groundColor.set(dark ? '#11161f' : '#cbd5e1');
+      hemisphere.intensity = dark ? .35 : .62;
+      daylight.color.set(dark ? '#8db4ff' : '#fff8eb');
+      daylight.intensity = dark ? .52 : 2.35;
+      renderer.toneMappingExposure = dark ? 1.12 : 1;
+      for (const light of interiorLights) light.intensity = dark ? 5.2 : 0;
+      for (const mat of screenMaterials) {
+        mat.emissive.set(dark ? '#2dd4bf' : '#315c4b');
+        mat.emissiveIntensity = dark ? .92 : .35;
+      }
+      for (const mat of lampMaterials) {
+        mat.emissive.set('#ffd283');
+        mat.emissiveIntensity = dark ? 1.85 : .35;
+      }
+      for (const mat of windowMaterials) {
+        mat.color.set(dark ? '#172538' : '#9dbfba');
+        mat.emissive.set(dark ? '#1e3a5f' : '#000000');
+        mat.emissiveIntensity = dark ? .45 : 0;
+      }
+      (selection.material as MeshBasicMaterial).color.set(dark ? '#2dd4bf' : '#0f766e');
+      render();
+    };
+    applyProjectStageRef.current = stage => {
+      motion.setProjectStage(stage);
+      syncPolicy();
+    };
+    applyThemeRef.current(theme);
+    applyProjectStageRef.current(projectStage);
     syncMotionPolicy.current = syncPolicy;
     const tick = (time: number) => {
       if (reducedMotion.matches || document.hidden) {
@@ -245,16 +313,6 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
         reportMotion();
       }
       animationFrame = motion.running ? requestAnimationFrame(tick) : 0;
-    };
-    const startMotion = () => {
-      syncPolicy();
-      if (motion.running || reducedMotion.matches || document.hidden) return;
-      motion.start();
-      reportMotion();
-      render();
-      if (!motion.running) return;
-      lastFrameTime = 0;
-      animationFrame = requestAnimationFrame(tick);
     };
     reducedMotion.addEventListener('change', syncPolicy);
     document.addEventListener('visibilitychange', syncPolicy);
@@ -293,6 +351,8 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       reducedMotion.removeEventListener('change', syncPolicy);
       document.removeEventListener('visibilitychange', syncPolicy);
       syncMotionPolicy.current = () => {};
+      applyThemeRef.current = () => {};
+      applyProjectStageRef.current = () => {};
       observer.disconnect();
       controls.removeEventListener('change', render);
       controls.dispose();
@@ -313,6 +373,8 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
   }, [selected, ready]);
   const eligibleKey = eligibleAgents.join(',');
   useEffect(() => { syncMotionPolicy.current(); }, [eligibleKey, snapshotExpiresAt, ready]);
+  useEffect(() => { if (ready) applyThemeRef.current(theme); }, [theme, ready]);
+  useEffect(() => { if (ready) applyProjectStageRef.current(projectStage); }, [projectStage, ready]);
 
   return <div className={`scene-viewport ${ready ? 'is-ready' : ''}`} ref={containerRef}>
     <canvas ref={canvasRef} className="office-canvas" data-engine="three.js" data-scene-ready={ready ? 'true' : 'false'} data-motion-running={motionRunning ? 'true' : 'false'} role="img" aria-label="Kantor isometrik 3D dengan delapan figur, dua ruang tim, dan fasilitas bersama"/>
