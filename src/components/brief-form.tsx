@@ -4,7 +4,21 @@ import { briefSchema, type Brief } from '@/lib/domain';
 import { kopiSenja } from '@/lib/fixture';
 
 const empty: Brief = { client: '', tagline: '', audience: '', description: '', location: '', hours: '', menu: [{ name: '', price: 0 }], synthetic: true };
-const labels = { client: 'Nama klien sintetis', tagline: 'Tagline', audience: 'Audiens', description: 'Deskripsi kedai', location: 'Lokasi contoh', hours: 'Jam buka' };
+const studioExample: Brief = {
+  client: 'Klinik Gigi Senyum Sehat',
+  tagline: 'Perawatan gigi nyaman untuk seluruh keluarga.',
+  audience: 'Keluarga muda dan pekerja profesional yang membutuhkan layanan perawatan gigi tepercaya.',
+  description: 'Klinik perawatan gigi modern dengan pemeriksaan berkala, pembersihan karang gigi, dan konsultasi estetika senyum dalam suasana tenang.',
+  location: 'Jalan Melati No. 28, Bandung',
+  hours: 'Senin–Sabtu, 09.00–20.00',
+  synthetic: true,
+  menu: [
+    { name: 'Konsultasi & pemeriksaan awal', price: 150000 },
+    { name: 'Scaling & pembersihan karang gigi', price: 350000 },
+    { name: 'Tambal gigi estetik', price: 450000 },
+  ],
+};
+const labels = { client: 'Nama klien sintetis', tagline: 'Tagline', audience: 'Audiens', description: 'Deskripsi bisnis', location: 'Lokasi contoh', hours: 'Jam buka' };
 export function BriefForm({ initial, busy, submitBlocked = false, nativeSubmitBlocked = false, onSubmit, onNativeSubmit, onCancel }: { initial?: Brief; busy: boolean; submitBlocked?: boolean; nativeSubmitBlocked?: boolean; onSubmit: (brief: Brief) => Promise<void>; onNativeSubmit?: (brief: Brief) => Promise<void>; onCancel: () => void }) {
   const [value, setValue] = useState<Brief>(initial ?? empty);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -34,7 +48,7 @@ export function BriefForm({ initial, busy, submitBlocked = false, nativeSubmitBl
         <button type="button" aria-label={`Hapus menu ${index+1}`} disabled={value.menu.length === 1} onClick={() => setValue({ ...value, menu: value.menu.filter((_, i) => i !== index) })}>Hapus</button>
       </div>)}
       <button type="button" disabled={value.menu.length === 6} onClick={() => setValue({ ...value, menu: [...value.menu, { name: '', price: 0 }] })}>Tambah menu</button>
-      <div className="form-footer"><button type="button" onClick={() => { setValue(structuredClone(kopiSenja)); setErrors({}); }}>Isi contoh Kopi Senja</button><button className="primary" type="submit" disabled={submitBlocked}>{busy ? 'Menyimpan…' : initial ? 'Simpan versi baru' : 'Proses uji lokal'}</button>{onNativeSubmit && !initial && <button type="button" disabled={submitBlocked || nativeSubmitBlocked} onClick={async () => {
+      <div className="form-footer"><button type="button" onClick={() => { setValue(structuredClone(kopiSenja)); setErrors({}); }}>Isi contoh Kopi Senja</button><button type="button" onClick={() => { setValue(structuredClone(studioExample)); setErrors({}); }}>Isi contoh Klinik Gigi</button><button className="primary" type="submit" disabled={submitBlocked}>{busy ? 'Menyimpan…' : initial ? 'Simpan versi baru' : 'Proses uji lokal'}</button>{onNativeSubmit && !initial && <button type="button" disabled={submitBlocked || nativeSubmitBlocked} onClick={async () => {
         const result = briefSchema.safeParse(value);
         if (!result.success) { setErrors(Object.fromEntries(result.error.issues.map(issue => [issue.path.join('.'), issue.message]))); return; }
         setErrors({}); await onNativeSubmit(result.data);

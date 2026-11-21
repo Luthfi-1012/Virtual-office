@@ -342,7 +342,19 @@ export function OfficeApp() {
     if (flight.current || nativeFlight.current) return;
     flight.current = true; setBusy(true); setMessage(''); setNotice('');
     try {
-      const result = await request('/api/qoderwake/workflow', { brief, project: kopiSenjaNativeRequest.project }) as { runId: string; reused: boolean };
+      const isKopiSenja = brief.client.trim().toLowerCase() === 'kopi senja';
+      const project: NativeProject = isKopiSenja ? kopiSenjaNativeRequest.project : {
+        ...kopiSenjaNativeRequest.project,
+        objective: `Menyajikan profil ${brief.client}, layanan/produk unggulan, jam operasional, dan informasi kontak dalam website empat halaman yang nyaman diakses dari ponsel. ${brief.description}`,
+        audience: brief.audience,
+        features: [
+          'Navigasi yang jelas antarhalaman Beranda, Menu/Layanan, Tentang, dan Kontak.',
+          `Daftar produk/layanan ${brief.client} dengan harga contoh berlabel data demo.`,
+          `Jam operasional (${brief.hours}) dan lokasi contoh (${brief.location}).`,
+          'Tombol kontak hanya elemen preview internal; jangan menghubungi siapa pun.',
+        ],
+      };
+      const result = await request('/api/qoderwake/workflow', { brief, project }) as { runId: string; reused: boolean };
       setForm(null); setConnected(true);
       setSelectedRunId(result.runId);
       setNotice(result.reused ? `Run ${result.runId} sudah ada; tidak ada run baru.` : `Run ${result.runId} diterima QoderWake. Status worker dipantau otomatis.`);

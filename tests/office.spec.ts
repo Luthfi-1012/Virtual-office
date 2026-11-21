@@ -130,7 +130,7 @@ test('renders hostile structured text inertly in an opaque preview without exter
   await openFixture(page, 'Kopi Uji Isolasi');
   const hostile = '<img src="https://example.invalid/x" onerror="alert(1)">';
   await page.getByLabel('Tagline').fill(hostile);
-  await page.getByLabel('Deskripsi kedai').fill('</style><script>alert(1)</script> Data uji keamanan sintetis.');
+  await page.getByLabel('Deskripsi bisnis').fill('</style><script>alert(1)</script> Data uji keamanan sintetis.');
   await page.getByRole('button', { name: 'Proses uji lokal', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Form brief' })).toHaveCount(0);
   await expect(page.getByTestId('job-status')).toHaveText('Menunggu founder');

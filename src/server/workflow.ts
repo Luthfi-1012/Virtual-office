@@ -88,7 +88,7 @@ function clientRequest(brief: Brief, project: NativeProject) {
   };
   return [
     'BRIEF PROYEK SINTETIS — DEMO INTERNAL VIRTUAL OFFICE',
-    'Klien sintetis: Kopi Senja, kedai kopi lokal.',
+    `Klien sintetis: ${brief.client} — ${brief.tagline}`,
     `Tujuan: ${project.objective}`,
     `Target pengguna: ${project.audience}`,
     `Halaman: ${project.pages.join(', ')}.`,
