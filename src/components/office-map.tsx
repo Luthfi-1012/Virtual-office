@@ -1,11 +1,12 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { facilities } from '@/lib/agents';
+import type { WakerDisplayStatus } from '@/lib/qoderwake';
 import { OfficeScene, type OfficeSceneHandle } from './office-scene';
 
 const areas = ['development', 'delivery', ...facilities.map(facility => facility.id)];
-export function OfficeMap({ selected, eligibleAgents, snapshotExpiresAt, snapshotLabel, onSelect, onFallback }: {
-  selected: string; eligibleAgents: readonly string[]; snapshotExpiresAt: number; snapshotLabel: string;
+export function OfficeMap({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, snapshotLabel, onSelect, onFallback }: {
+  selected: string; eligibleAgents: readonly string[]; wakerStatuses: Readonly<Record<string, WakerDisplayStatus>>; snapshotExpiresAt: number; snapshotLabel: string;
   onSelect: (id: string) => void; onFallback: () => void;
 }) {
   const scene = useRef<OfficeSceneHandle>(null);
@@ -44,7 +45,7 @@ export function OfficeMap({ selected, eligibleAgents, snapshotExpiresAt, snapsho
         {facilities.map(facility => <option key={facility.id} value={facility.id}>{facility.name}</option>)}
       </select></label>
     </div>
-    <OfficeScene ref={scene} selected={selected} eligibleAgents={eligibleAgents} snapshotExpiresAt={snapshotExpiresAt} onSelect={onSelect} onZoomChange={setZoom} onFallback={unavailable} onMotionChange={setMotionRunning} onActivityChange={(next, held) => { setActivity(next); setBlocked(held); }}/>
+    <OfficeScene ref={scene} selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} snapshotExpiresAt={snapshotExpiresAt} onSelect={onSelect} onZoomChange={setZoom} onFallback={unavailable} onMotionChange={setMotionRunning} onActivityChange={(next, held) => { setActivity(next); setBlocked(held); }}/>
     <div className="scene-room-switch" role="group" aria-label="Fokus ruang tim">
       <button aria-label="Fokus Development Room" disabled={failed} onClick={() => focus('development')}>Development <span>5</span></button>
       <button aria-label="Fokus Web Delivery Room" disabled={failed} onClick={() => focus('delivery')}>Web Delivery <span>3</span></button>

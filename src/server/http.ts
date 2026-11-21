@@ -28,8 +28,12 @@ async function readBody(request: Request): Promise<unknown> {
   catch { throw new HttpError(400, 'JSON tidak valid.'); }
 }
 
-export function createOfficeApi(store: OfficeStore, readNative: () => Promise<QoderWakeSnapshot> = readQoderWakeSnapshot, workflow?: OfficeWorkflow) {
-  const sessions = new Map<string, number>();
+export function createOfficeApi(
+  store: OfficeStore,
+  readNative: () => Promise<QoderWakeSnapshot> = readQoderWakeSnapshot,
+  workflow?: OfficeWorkflow,
+  sessions = new Map<string, number>(),
+) {
   return async (request: Request): Promise<Response> => {
     try {
       const url = new URL(request.url);

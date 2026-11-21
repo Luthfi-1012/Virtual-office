@@ -7,6 +7,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { agents } from '@/lib/agents';
+import type { WakerDisplayStatus } from '@/lib/qoderwake';
 import { createOfficeModel, disposeOfficeModel } from '@/lib/office-model';
 import { createOfficeMotion } from '@/lib/office-motion';
 
@@ -22,6 +23,7 @@ export type OfficeSceneHandle = {
 type Props = {
   selected: string;
   eligibleAgents: readonly string[];
+  wakerStatuses: Readonly<Record<string, WakerDisplayStatus>>;
   snapshotExpiresAt: number;
   onActivityChange: (activity: string | null, blocked: boolean) => void;
   onSelect: (id: string) => void;
@@ -32,7 +34,7 @@ type Props = {
 const isoOffset = new Vector3(25, 27, 31);
 const roomAnchors = { development: new Vector3(-6.45, 3.15, -8.75), delivery: new Vector3(6.4, 3.15, -8.75) };
 
-export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeScene({ selected, eligibleAgents, snapshotExpiresAt, onActivityChange, onSelect, onZoomChange, onFallback, onMotionChange }, ref) {
+export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeScene({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, onActivityChange, onSelect, onZoomChange, onFallback, onMotionChange }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectedRef = useRef(selected);
@@ -226,7 +228,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
     };
     const syncPolicy = () => {
       motion.setEligibleAgents(motionPolicy.current.eligibleAgents);
-      if (!motion.running || reducedMotion.matches || document.hidden) stopMotion();
+      if (reducedMotion.matches || document.hidden) stopMotion();
       reportMotion();
     };
     syncMotionPolicy.current = syncPolicy;
@@ -321,9 +323,12 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       <div ref={node => { if (node) roomLabelRefs.current.set('delivery', node); else roomLabelRefs.current.delete('delivery'); }}><strong>Web Delivery Room</strong><span>3 peran</span></div>
     </div>
     <div className="scene-hotspots" role="group" aria-label="Pilih figur agent">
-      {agents.map(agent => <button key={agent.id} ref={node => { if (node) hotspotRefs.current.set(agent.id, node); else hotspotRefs.current.delete(agent.id); }} className="agent-hotspot" aria-label={`Pilih ${agent.name}`} aria-pressed={selected === agent.id} onClick={() => onSelect(agent.id)}>
-        <span className="hotspot-point" aria-hidden="true"/><span className="hotspot-label">{agent.name}</span>
-      </button>)}
+      {agents.map(agent => {
+        const status = wakerStatuses[agent.id];
+        return <button key={agent.id} ref={node => { if (node) hotspotRefs.current.set(agent.id, node); else hotspotRefs.current.delete(agent.id); }} className="agent-hotspot" aria-label={`Pilih ${agent.name}`} aria-description={status.label} aria-pressed={selected === agent.id} data-waker-id={agent.wakerId} data-waker-status={status.kind} title={status.label} onClick={() => onSelect(agent.id)}>
+          <span className={`hotspot-point native-${status.kind}`} aria-hidden="true"/><span className="hotspot-label">{agent.name}<small>{status.label}</small></span>
+        </button>;
+      })}
     </div>
   </div>;
 });

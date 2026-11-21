@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OfficeScene } from '@/components/office-scene';
+import { agents } from '@/lib/agents';
 
 const lifecycle = vi.hoisted(() => ({
   maps: [] as import('three').WebGLRenderTarget[],
@@ -80,6 +81,7 @@ describe('office scene resource lifecycle', () => {
       <OfficeScene
         selected=""
         eligibleAgents={[]}
+        wakerStatuses={Object.fromEntries(agents.map(agent => [agent.id, { kind: 'unknown' as const, label: 'Status tidak diketahui' }]))}
         snapshotExpiresAt={0}
         onActivityChange={() => {}}
         onSelect={() => {}}

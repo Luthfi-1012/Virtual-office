@@ -107,9 +107,39 @@ export function snapshotFreshness(snapshot: QoderWakeSnapshot, now: number): Sna
   return Number.isFinite(age) && age >= 0 && age < SNAPSHOT_MAX_AGE_MS ? 'fresh' : 'stale';
 }
 
-export function wakerWorkState(snapshot: QoderWakeSnapshot, name: string, now: number): WakerWorkState {
+export type WakerDisplayStatus = {
+  kind: 'working' | 'waiting' | 'done' | 'online' | 'unknown';
+  label: string;
+};
+
+export function wakerDisplayStatus(snapshot: QoderWakeSnapshot, wakerId: string, now: number): WakerDisplayStatus {
+  const freshness = snapshotFreshness(snapshot, now);
+  if (freshness === 'disconnected') return { kind: 'unknown', label: 'Koneksi terputus · status tidak diketahui' };
+  if (freshness === 'stale') return { kind: 'unknown', label: 'Kedaluwarsa · status tidak diketahui' };
+  const waker = matchWakerById(snapshot.wakers, wakerId);
+  if (!waker) return { kind: 'unknown', label: 'Waker tidak ditemukan' };
+  const tasks = snapshot.tasks.filter(task => task.assigneeId === waker.id)
+    .sort((a, b) => Date.parse(b.lastActiveAt) - Date.parse(a.lastActiveAt));
+  const current = tasks.find(task => activeTaskStatuses.has(task.status));
+  if (current?.status === 'running') return { kind: 'working', label: 'Bekerja · running' };
+  if (current) {
+    const approval = current.status === 'waiting' && `${current.rawStatus} ${current.type}`.toLowerCase().includes('approval');
+    return { kind: 'waiting', label: approval ? 'Menunggu approval' : `Menunggu · ${current.status}` };
+  }
+  if (snapshot.activities.some(activity => activity.wakerId === waker.id && activity.status === 'running')) {
+    return { kind: 'working', label: 'Bekerja · sesi running' };
+  }
+  const latestTerminal = tasks.find(task => terminalTaskStatuses.has(task.status));
+  if (latestTerminal?.status === 'done') return { kind: 'done', label: 'Task selesai · done' };
+  if (waker.status === 'online' && waker.onlineStatus === 'online' && waker.connectionStatus === 'connected') {
+    return { kind: 'online', label: 'Online' };
+  }
+  return { kind: 'unknown', label: 'Status tidak diketahui' };
+}
+
+export function wakerWorkState(snapshot: QoderWakeSnapshot, wakerId: string, now: number): WakerWorkState {
   if (snapshotFreshness(snapshot, now) !== 'fresh') return 'unknown';
-  const waker = matchWakerByName(snapshot.wakers, name);
+  const waker = matchWakerById(snapshot.wakers, wakerId);
   if (!waker) return 'unknown';
   const tasks = snapshot.tasks.filter(task => task.assigneeId === waker.id);
   if (tasks.some(task => activeTaskStatuses.has(task.status))) return 'active';
@@ -121,7 +151,7 @@ export function wakerWorkState(snapshot: QoderWakeSnapshot, name: string, now: n
   return 'idle';
 }
 
-export function matchWakerByName<T extends { name: string }>(wakers: readonly T[], name: string): T | undefined {
-  const matches = wakers.filter(waker => waker.name === name);
+export function matchWakerById<T extends { id: string }>(wakers: readonly T[], wakerId: string): T | undefined {
+  const matches = wakers.filter(waker => waker.id === wakerId);
   return matches.length === 1 ? matches[0] : undefined;
 }

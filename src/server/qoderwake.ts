@@ -49,7 +49,7 @@ type Reader = () => Promise<QoderWakeSnapshot>;
 async function execute(args: readonly string[]): Promise<unknown> {
   const executable = process.env.QODERWAKE_CLI_PATH?.trim() || 'qoderwake';
   const { stdout } = await execFileAsync(executable, [...args], {
-    shell: false, windowsHide: true, timeout: 10000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8',
+    shell: false, windowsHide: true, timeout: 20000, maxBuffer: 4 * 1024 * 1024, encoding: 'utf8',
   });
   return JSON.parse(stdout) as unknown;
 }

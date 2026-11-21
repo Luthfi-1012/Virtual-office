@@ -5,7 +5,7 @@ import { kopiSenja } from '@/lib/fixture';
 
 const empty: Brief = { client: '', tagline: '', audience: '', description: '', location: '', hours: '', menu: [{ name: '', price: 0 }], synthetic: true };
 const labels = { client: 'Nama klien sintetis', tagline: 'Tagline', audience: 'Audiens', description: 'Deskripsi kedai', location: 'Lokasi contoh', hours: 'Jam buka' };
-export function BriefForm({ initial, busy, submitBlocked = false, onSubmit, onNativeSubmit, onCancel }: { initial?: Brief; busy: boolean; submitBlocked?: boolean; onSubmit: (brief: Brief) => Promise<void>; onNativeSubmit?: (brief: Brief) => Promise<void>; onCancel: () => void }) {
+export function BriefForm({ initial, busy, submitBlocked = false, nativeSubmitBlocked = false, onSubmit, onNativeSubmit, onCancel }: { initial?: Brief; busy: boolean; submitBlocked?: boolean; nativeSubmitBlocked?: boolean; onSubmit: (brief: Brief) => Promise<void>; onNativeSubmit?: (brief: Brief) => Promise<void>; onCancel: () => void }) {
   const [value, setValue] = useState<Brief>(initial ?? empty);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const heading = useRef<HTMLHeadingElement>(null);
@@ -34,7 +34,7 @@ export function BriefForm({ initial, busy, submitBlocked = false, onSubmit, onNa
         <button type="button" aria-label={`Hapus menu ${index+1}`} disabled={value.menu.length === 1} onClick={() => setValue({ ...value, menu: value.menu.filter((_, i) => i !== index) })}>Hapus</button>
       </div>)}
       <button type="button" disabled={value.menu.length === 6} onClick={() => setValue({ ...value, menu: [...value.menu, { name: '', price: 0 }] })}>Tambah menu</button>
-      <div className="form-footer"><button type="button" onClick={() => { setValue(structuredClone(kopiSenja)); setErrors({}); }}>Isi contoh Kopi Senja</button><button className="primary" type="submit" disabled={submitBlocked}>{busy ? 'Menyimpan…' : initial ? 'Simpan versi baru' : 'Proses uji lokal'}</button>{onNativeSubmit && !initial && <button type="button" disabled={submitBlocked} onClick={async () => {
+      <div className="form-footer"><button type="button" onClick={() => { setValue(structuredClone(kopiSenja)); setErrors({}); }}>Isi contoh Kopi Senja</button><button className="primary" type="submit" disabled={submitBlocked}>{busy ? 'Menyimpan…' : initial ? 'Simpan versi baru' : 'Proses uji lokal'}</button>{onNativeSubmit && !initial && <button type="button" disabled={submitBlocked || nativeSubmitBlocked} onClick={async () => {
         const result = briefSchema.safeParse(value);
         if (!result.success) { setErrors(Object.fromEntries(result.error.issues.map(issue => [issue.path.join('.'), issue.message]))); return; }
         setErrors({}); await onNativeSubmit(result.data);

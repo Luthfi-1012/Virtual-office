@@ -4,7 +4,7 @@ import { agents, facilities } from '@/lib/agents';
 import type { Brief, NativeProject } from '@/lib/domain';
 import { kopiSenjaNativeRequest } from '@/lib/fixture';
 import type { OfficeSnapshot } from '@/server/store';
-import { activeTaskStatuses, isQoderWakeSnapshot, matchWakerByName, snapshotFreshness, wakerWorkState, SNAPSHOT_MAX_AGE_MS, type QoderWakeSnapshot } from '@/lib/qoderwake';
+import { isQoderWakeSnapshot, matchWakerById, snapshotFreshness, wakerDisplayStatus, wakerWorkState, SNAPSHOT_MAX_AGE_MS, type QoderWakeSnapshot, type WakerDisplayStatus } from '@/lib/qoderwake';
 import { OfficeMap } from './office-map';
 import { BriefForm } from './brief-form';
 import { JobPanel, statusLabel } from './job-panel';
@@ -25,8 +25,8 @@ function disconnectedNative(message: string): QoderWakeSnapshot {
 }
 
 const nativeTime = new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-// Twelve sequential CLI reads can each use the adapter's 10-second timeout; allow 10 more seconds for overhead.
-const QODERWAKE_REQUEST_TIMEOUT_MS = 130_000;
+// Twelve sequential CLI reads can each use the adapter's 20-second timeout; allow 10 more seconds for overhead.
+const QODERWAKE_REQUEST_TIMEOUT_MS = 250_000;
 
 export function OfficeApp() {
   const [snapshot, setSnapshot] = useState<OfficeSnapshot>({ jobs: [] });
@@ -42,31 +42,35 @@ export function OfficeApp() {
   const [now, setNow] = useState(0);
   const nativeGeneration = useRef(0);
   const [busy, setBusy] = useState(false);
+  const [nativePending, setNativePending] = useState(true);
+  const [networkOffline, setNetworkOffline] = useState(false);
   const [message, setMessage] = useState('');
   const [notice, setNotice] = useState('');
   const [pending, setPending] = useState<Operation | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const csrf = useRef('');
   const flight = useRef(false);
+  const nativeFlight = useRef(false);
   const job = snapshot.jobs.find(item => item.id === selectedJob) ?? snapshot.jobs[0];
   const agent = agents.find(item => item.id === selected);
   const facility = facilities.find(item => item.id === selected);
   const freshness = snapshotFreshness(native, now);
   const nativeCurrent = freshness === 'fresh';
-  const freshnessLabel = freshness === 'fresh' ? 'Terbaru' : freshness === 'stale' ? 'Kedaluwarsa' : 'Koneksi terputus';
-  const nativeWaker = nativeCurrent && agent ? matchWakerByName(native.wakers, agent.name) : undefined;
+  const checkingNative = nativePending && !networkOffline && freshness === 'disconnected';
+  const freshnessLabel = checkingNative ? 'Memeriksa QoderWake' : freshness === 'fresh' ? 'Terbaru' : freshness === 'stale' ? 'Kedaluwarsa' : 'Koneksi terputus';
+  const nativeWaker = nativeCurrent && agent ? matchWakerById(native.wakers, agent.wakerId) : undefined;
   const nativeTasks = nativeWaker ? native.tasks.filter(task => task.assigneeId === nativeWaker.id) : [];
   const nativeActivities = nativeWaker ? native.activities.filter(activity => activity.wakerId === nativeWaker.id) : [];
   const otherNativeTasks = nativeCurrent ? native.tasks.filter(task => task.assigneeId !== nativeWaker?.id) : [];
-  const workState = agent ? wakerWorkState(native, agent.name, now) : 'unknown';
   const eligibleAgents = (nativeCurrent
-    ? agents.filter(item => wakerWorkState(native, item.name, now) === 'idle')
+    ? agents.filter(item => wakerWorkState(native, item.wakerId, now) === 'idle')
     : agents
   ).map(item => item.id);
-  const agentNativeStatus = !nativeCurrent ? `${freshnessLabel} · status tidak diketahui`
-    : !nativeWaker ? 'Peran tidak ditemukan'
-    : workState === 'active' ? `Task aktif · ${nativeTasks.filter(task => activeTaskStatuses.has(task.status)).map(task => task.status).join(', ')}`
-    : workState === 'idle' ? 'Tanpa task aktif pada snapshot' : 'Status tugas tidak diketahui';
+  const wakerStatuses = Object.fromEntries(agents.map(item => [item.id, checkingNative
+    ? { kind: 'unknown', label: 'Memeriksa QoderWake · status belum diketahui' } as const
+    : wakerDisplayStatus(native, item.wakerId, now)
+  ])) as Record<string, WakerDisplayStatus>;
+  const agentNativeStatus = agent ? wakerStatuses[agent.id].label : `${freshnessLabel} · status tidak diketahui`;
   const room = selected === 'development'
     ? { name: 'Development Room', description: 'Ruang kolaborasi untuk lima peran perancang dan pembangun produk.', group: 'development' as const }
     : selected === 'delivery' ? { name: 'Web Delivery Room', description: 'Ruang untuk intake, pengemasan hasil, dan billing simulasi.', group: 'delivery' as const } : undefined;
@@ -121,45 +125,57 @@ export function OfficeApp() {
     setPending(value);
   }
   async function refresh() {
-    if (flight.current) return;
+    if (flight.current || nativeFlight.current) return;
     const generation = ++nativeGeneration.current;
-    flight.current = true; setBusy(true); setCanRetry(false);
+    flight.current = true; nativeFlight.current = true;
+    setBusy(true); setNativePending(true); setCanRetry(false);
+    let ready = false;
     try {
-      const response = await fetch('/api/session', { headers: { 'x-office-client': 'local' }, credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000) });
-      if (!response.ok) throw new Error('Sesi lokal tidak tersedia.');
-      const session = await response.json();
-      if (generation !== nativeGeneration.current) return;
-      csrf.current = session.csrf;
-      const data = await request('/api/office');
-      if (generation !== nativeGeneration.current) return;
-      setSnapshot(data); setConnected(true); setMessage('');
-      await refreshNative(generation);
-      await refreshWorkflow(generation);
-      if (generation !== nativeGeneration.current) return;
-      const stored = sessionStorage.getItem('office-pending');
-      if (stored) {
-        const operation: Operation = JSON.parse(stored);
-        setPending(operation);
-        const { result } = await request(`/api/office?operation=${encodeURIComponent(operation.key)}`);
-        if (result) { savePending(null); setSelectedJob(result.jobId); setForm(null); setNotice('Operasi ditemukan di penyimpanan. Tidak dikirim ulang.'); }
-        else { setCanRetry(true); setMessage('Operasi belum tercatat. Anda dapat mengirim ulang operasi yang sama tanpa membuat kunci baru.'); }
+      try {
+        const response = await fetch('/api/session', { headers: { 'x-office-client': 'local' }, credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(15000) });
+        if (!response.ok) throw new Error('Sesi lokal tidak tersedia.');
+        const session = await response.json();
+        if (generation !== nativeGeneration.current) return;
+        csrf.current = session.csrf;
+        const data = await request('/api/office');
+        if (generation !== nativeGeneration.current) return;
+        setSnapshot(data); setConnected(true); setMessage('');
+        const stored = sessionStorage.getItem('office-pending');
+        if (stored) {
+          const operation: Operation = JSON.parse(stored);
+          setPending(operation);
+          const { result } = await request(`/api/office?operation=${encodeURIComponent(operation.key)}`);
+          if (result) { savePending(null); setSelectedJob(result.jobId); setForm(null); setNotice('Operasi ditemukan di penyimpanan. Tidak dikirim ulang.'); }
+          else { setCanRetry(true); setMessage('Operasi belum tercatat. Anda dapat mengirim ulang operasi yang sama tanpa membuat kunci baru.'); }
+        }
+        ready = true;
+      } catch {
+        if (generation !== nativeGeneration.current) return;
+        setConnected(false);
+        setNative(disconnectedNative('Status QoderWake belum diperbarui karena pemeriksaan koneksi gagal.'));
+        setMessage('Koneksi belum terkonfirmasi. Data mungkin usang; periksa koneksi sebelum melanjutkan.');
+      } finally {
+        flight.current = false; setBusy(false);
       }
-    } catch {
-      if (generation !== nativeGeneration.current) return;
-      setConnected(false);
-      setNative(disconnectedNative('Status QoderWake belum diperbarui karena pemeriksaan koneksi gagal.'));
-      setMessage('Koneksi belum terkonfirmasi. Data mungkin usang; periksa koneksi sebelum melanjutkan.');
-    } finally { flight.current = false; setBusy(false); }
+      if (ready && generation === nativeGeneration.current) {
+        await refreshNative(generation);
+      }
+    } finally {
+      nativeFlight.current = false;
+      setNativePending(false);
+    }
+    if (ready && generation === nativeGeneration.current) await refreshWorkflow(generation);
   }
   useEffect(() => {
     void refresh();
     const offline = () => {
       nativeGeneration.current++;
+      setNetworkOffline(true);
       setConnected(false);
       setNative(current => ({ ...disconnectedNative('Offline. Snapshot QoderWake terakhir tidak ditampilkan sebagai status aktual.'), checkedAt: current.checkedAt }));
       setMessage('Offline. Data tersimpan mungkin usang; operasi baru dinonaktifkan.');
     };
-    const online = () => { setMessage('Jaringan kembali. Periksa koneksi untuk merekonsiliasi status.'); };
+    const online = () => { setNetworkOffline(false); setMessage('Jaringan kembali. Periksa koneksi untuk merekonsiliasi status.'); };
     window.addEventListener('offline', offline); window.addEventListener('online', online);
     return () => { window.removeEventListener('offline', offline); window.removeEventListener('online', online); };
     // The initial connection is single-flight; reconnect is an explicit user action.
@@ -184,7 +200,7 @@ export function OfficeApp() {
     } finally { flight.current = false; setBusy(false); }
   }
   async function submitNative(brief: Brief) {
-    if (flight.current) return;
+    if (flight.current || nativeFlight.current) return;
     flight.current = true; setBusy(true); setMessage(''); setNotice('');
     try {
       const result = await request('/api/qoderwake/workflow', { brief, project: kopiSenjaNativeRequest.project }) as { runId: string; reused: boolean };
@@ -205,7 +221,7 @@ export function OfficeApp() {
     <header className="topbar">
       <a className="brand" href="/" aria-label="Virtual Office beranda"><span className="brand-mark" aria-hidden="true"><i/><i/><i/></span><span>Virtual Office<small>WEB DELIVERY STUDIO</small></span></a>
       <div className="topbar-context">Professional Services Studio<span>Satu kantor untuk seluruh proses.</span></div>
-      <div className="topbar-actions"><div className="connection"><span className={connected ? 'status-dot online' : 'status-dot'}/><span>{connected ? 'Tersambung ke penyimpanan lokal' : 'Koneksi lokal belum terkonfirmasi'}</span></div><button className="connection-button" onClick={() => void refresh()} disabled={busy}>Periksa koneksi</button></div>
+      <div className="topbar-actions"><div className="connection"><span className={connected ? 'status-dot online' : 'status-dot'}/><span>{connected ? 'Tersambung ke penyimpanan lokal' : 'Koneksi lokal belum terkonfirmasi'}</span></div><button className="connection-button" onClick={() => void refresh()} disabled={busy || nativePending}>Periksa koneksi</button></div>
       <div className="founder"><span className="avatar" aria-hidden="true"><RailIcon><circle cx="12" cy="8" r="3"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></RailIcon></span><span>Founder<small>Operator lokal</small></span></div>
     </header>
     <div className="mode-banner"><span className={`badge ${nativeCurrent ? 'good' : 'warm'}`}>Snapshot QoderWake</span><div className="snapshot-summary"><p><strong data-testid="snapshot-status" role="status">{freshnessLabel}</strong> · Pemeriksaan terakhir: {native.checkedAt ? <time data-testid="snapshot-checked" dateTime={native.checkedAt}>{nativeTime.format(new Date(native.checkedAt))}</time> : 'belum diperiksa'}{lastSuccess && !nativeCurrent && <> · Snapshot sukses terakhir: <time data-testid="snapshot-success" dateTime={lastSuccess}>{nativeTime.format(new Date(lastSuccess))}</time></>}</p><p>{!nativeCurrent && 'Status Waker tidak diketahui. '}<strong>Preview, invoice, dan gerak kantor tetap simulasi</strong>. Baca-saja · refresh manual · kedaluwarsa setelah 60 detik (aturan UI, bukan jaminan QoderWake).</p></div></div>
@@ -226,20 +242,20 @@ export function OfficeApp() {
         {revisionConflict && form?.kind === 'revise' && <div className="notice error" role="alert"><p>Paket sudah berubah. Draf Anda tetap disimpan dan belum dikirim. Tinjau paket terbaru di bawah sebelum menerapkan draf sebagai revisi baru.</p><div className="button-row"><button disabled={disabled || !revisionJob} onClick={() => { if (revisionJob) setForm({ ...form, baseVersion: revisionJob.version }); }}>Terapkan draf ke versi terbaru</button><button disabled={disabled} onClick={() => setForm(null)}>Buang draf</button></div></div>}
         <section className="office-stage" aria-label="Virtual Office">
           <div className="map-toolbar"><div><span className="view-indicator" aria-hidden="true"/>KANTOR 3D <span className="muted">/ pilih figur atau ruang</span></div><div className="segmented"><button aria-pressed={view === 'map'} onClick={() => setView('map')}>Denah</button><button aria-pressed={view === 'list'} onClick={() => setView('list')}>Daftar agent</button></div></div>
-          {view === 'map' && <div className="map-canvas"><OfficeMap selected={selected} eligibleAgents={eligibleAgents} snapshotExpiresAt={nativeCurrent ? Date.parse(native.checkedAt) + SNAPSHOT_MAX_AGE_MS : 0} snapshotLabel={freshnessLabel} onSelect={select} onFallback={() => setSceneFailed(true)}/></div>}
-          <div className={view === 'list' || sceneFailed ? 'agent-directory visible' : 'agent-directory mobile-fallback'}>{['development', 'delivery'].map(group => <section key={group}><h3>{group === 'development' ? 'Development Room' : 'Web Delivery Room'}<span>{group === 'development' ? '5 peran' : '3 peran bisnis'}</span></h3>{agents.filter(item => item.group === group).map(item => <button key={item.id} aria-label={`Detail ${item.name}`} aria-pressed={selected === item.id} onClick={() => select(item.id)}><span className="role-avatar" aria-hidden="true"><RailIcon><circle cx="12" cy="8" r="3.2"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></RailIcon></span><span><strong>{item.name}</strong><small>{!nativeCurrent ? freshnessLabel : wakerWorkState(native, item.name, now) === 'active' ? 'Task aktif pada snapshot' : wakerWorkState(native, item.name, now) === 'idle' ? 'Tanpa task aktif pada snapshot' : 'Status tugas tidak diketahui'}</small></span><span aria-hidden="true">↗</span></button>)}</section>)}</div>
+          {view === 'map' && <div className="map-canvas"><OfficeMap selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} snapshotExpiresAt={nativeCurrent ? Date.parse(native.checkedAt) + SNAPSHOT_MAX_AGE_MS : 0} snapshotLabel={freshnessLabel} onSelect={select} onFallback={() => setSceneFailed(true)}/></div>}
+          <div className={view === 'list' || sceneFailed ? 'agent-directory visible' : 'agent-directory mobile-fallback'}>{['development', 'delivery'].map(group => <section key={group}><h3>{group === 'development' ? 'Development Room' : 'Web Delivery Room'}<span>{group === 'development' ? '5 peran' : '3 peran bisnis'}</span></h3>{agents.filter(item => item.group === group).map(item => <button key={item.id} aria-label={`Detail ${item.name}`} aria-pressed={selected === item.id} onClick={() => select(item.id)}><span className="role-avatar" aria-hidden="true"><RailIcon><circle cx="12" cy="8" r="3.2"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></RailIcon></span><span><strong>{item.name}</strong><small>{wakerStatuses[item.id].label}</small></span><span aria-hidden="true">↗</span></button>)}</section>)}</div>
           <div className="room-legend"><span><i className="dev-swatch"/>Development · 5 peran</span><span><i className="delivery-swatch"/>Web Delivery · 3 peran</span><span>{`Snapshot QoderWake · ${freshnessLabel}`}</span></div>
         </section>
         <section className="work-section" id="work-section" aria-label="Pekerjaan dan hasil">
           <div className="work-section-heading"><div><span className="eyebrow">RUANG KERJA FOUNDER</span><h2>Pekerjaan & hasil</h2><p>Brief, preview, invoice simulasi, dan keputusan tersimpan.</p></div><button className="primary new-brief" disabled={disabled} onClick={openNewBrief}>Brief baru<span aria-hidden="true">＋</span></button></div>
           <div className="job-list" aria-label="Daftar pekerjaan">{snapshot.jobs.length === 0 ? <p className="empty-small">Belum ada pekerjaan. Mulai dari brief sintetis pertama.</p> : snapshot.jobs.map(item => <button key={item.id} className={`job-card ${job?.id === item.id ? 'active' : ''}`} onClick={() => { setSelectedJob(item.id); setForm(null); }} disabled={busy || !!pending}><span className="job-icon" aria-hidden="true">K</span><span><strong>{item.brief.client}</strong><small>v{item.version} · {statusLabel[item.status]}</small></span></button>)}</div>
-          {form && <BriefForm key={form.id} initial={form.kind === 'revise' ? form.initial : undefined} busy={disabled} submitBlocked={revisionConflict} onCancel={() => setForm(null)} onSubmit={brief => mutate({ action: 'submit', key: crypto.randomUUID(), brief, ...(form.kind === 'revise' ? { jobId: form.jobId, expectedVersion: form.baseVersion } : {}) })} onNativeSubmit={submitNative}/>}
+          {form && <BriefForm key={form.id} initial={form.kind === 'revise' ? form.initial : undefined} busy={disabled} submitBlocked={revisionConflict} nativeSubmitBlocked={nativePending} onCancel={() => setForm(null)} onSubmit={brief => mutate({ action: 'submit', key: crypto.randomUUID(), brief, ...(form.kind === 'revise' ? { jobId: form.jobId, expectedVersion: form.baseVersion } : {}) })} onNativeSubmit={submitNative}/>}
           {workflow.request && <section className="job-panel panel" aria-label="Run WakerFlow native">
             <div className="section-heading"><div><span className="eyebrow">WAKERFLOW NATIVE · V13 · TERPISAH DARI DEMO LOKAL</span><h2>Web Delivery Studio</h2></div><span className={`badge ${workflow.gate === 'waiting_for_founder' ? 'good' : 'warm'}`}>{workflow.gate === 'waiting_for_founder' ? 'Menunggu approval founder' : workflow.gate === 'finished' ? 'Run selesai' : workflow.gate === 'dispatch_unknown' ? 'Dispatch belum diketahui' : 'Approval belum tercapai'}</span></div>
             <dl className="facts"><div><dt>Run ID</dt><dd className="mono" data-testid="workflow-run-id">{workflow.request.runId ?? 'Belum terkonfirmasi'}</dd></div><div><dt>Status QoderWake</dt><dd data-testid="workflow-status">{workflow.run?.status ?? 'Belum tersedia'}</dd></div><div><dt>Fase aktual</dt><dd>{workflow.run?.currentPhase ?? 'Belum tersedia'}</dd></div><div><dt>Confirmation pending</dt><dd>{workflow.pendingConfirmations.length}</dd></div></dl>
             <p className="scope-note">Status dan urutan berikut berasal dari event run QoderWake. Aplikasi tidak menyetujui gate dan tidak menjalankan PM akhir secara manual.</p>
             {workflow.workers.length > 0 && <ol className="timeline">{workflow.workers.map(worker => <li key={worker.sequence}><span className="timeline-dot"/><div><p><strong>{worker.phase}</strong> · {worker.label}</p><span className="muted">{worker.status}{worker.nextOwner ? ` · next_owner: ${worker.nextOwner}` : ' · next_owner belum tersedia'}</span></div></li>)}</ol>}
-            <div className="button-row"><button disabled={busy} onClick={() => void refreshWorkflow()}>Periksa status run</button></div>
+            <div className="button-row"><button disabled={busy || nativePending} onClick={() => void refreshWorkflow()}>Periksa status run</button></div>
           </section>}
           {job ? <JobPanel key={`${job.id}-${job.version}`} job={job} disabled={disabled} onRevise={() => setForm({ id: crypto.randomUUID(), kind: 'revise', jobId: job.id, baseVersion: job.version, initial: job.brief })} onDecide={decision => void mutate({ action: 'decide', key: crypto.randomUUID(), jobId: job.id, version: job.version, decision })}/> : <section className="empty-job panel"><span className="eyebrow">DARI BRIEF KE HASIL</span><h2>Mulai dari satu kebutuhan klien.</h2><p>Buat brief Kopi Senja untuk meninjau preview satu halaman, invoice simulasi, dan jejak validasi lokal.</p><div className="empty-pipeline"><span>Intake</span><span aria-hidden="true">→</span><span>Delivery</span><span aria-hidden="true">→</span><span>Billing</span></div></section>}
         </section>
@@ -262,7 +278,7 @@ export function OfficeApp() {
               </dl>
               <h3 className="native-subheading">Tugas Task Board</h3>
               {nativeTasks.length ? <ul className="native-records">{nativeTasks.slice(0, 5).map(task => <li key={task.id}><strong>{task.title}</strong><span>{task.status} · {task.sourceName}</span><time dateTime={task.lastActiveAt}>{nativeTime.format(new Date(task.lastActiveAt))}</time></li>)}</ul> : <p className="native-empty">Tidak ada tugas untuk Waker ini dalam cuplikan Task Board yang diterima.</p>}
-            </> : <dl className="facts"><div><dt>Tugas native</dt><dd>{nativeCurrent ? 'Nama peran tidak memiliki kecocokan Waker yang unik' : 'Belum ada data'}</dd></div><div><dt>Progres / tahap</dt><dd>Tidak diketahui</dd></div><div><dt>Handoff native</dt><dd>Belum terverifikasi</dd></div></dl>}
+            </> : <dl className="facts"><div><dt>Tugas native</dt><dd>{nativeCurrent ? 'ID sumber tidak memiliki kecocokan Waker yang unik' : 'Belum ada data'}</dd></div><div><dt>Progres / tahap</dt><dd>Tidak diketahui</dd></div><div><dt>Handoff native</dt><dd>Belum terverifikasi</dd></div></dl>}
           </div>
           {nativeStep && <div className="local-step"><h3>Pemrosesan lokal terkait</h3><p>{nativeStep.summary}</p><small>{nativeStep.status === 'completed' ? 'Selesai' : 'Gagal'} · selanjutnya: {nativeStep.nextOwner}</small><p className="muted">Bukan tugas atau hasil eksekusi Waker.</p></div>}
           <div className="activity-empty">
@@ -273,7 +289,7 @@ export function OfficeApp() {
         <div className="integration-note" data-testid="qoderwake-connection">
           <h3>Snapshot QoderWake</h3>
           <p><strong>{freshnessLabel}{nativeCurrent ? ` · CLI ${native.version}` : ''}</strong></p>
-          <p>{nativeCurrent ? `${native.wakers.length} Waker terbaca. Status dan metadata berlaku pada waktu pemeriksaan, bukan streaming.` : freshness === 'stale' ? 'Periksa koneksi untuk memperbarui snapshot. Data lama disembunyikan; Waker tidak dianggap idle atau bekerja.' : native.message ?? 'Menunggu pemeriksaan status QoderWake.'}</p>
+          <p>{nativeCurrent ? `${native.wakers.length} Waker terbaca. Status dan metadata berlaku pada waktu pemeriksaan, bukan streaming.` : checkingNative ? 'Pemeriksaan sedang berjalan. Penyimpanan lokal dan brief lokal tetap dapat digunakan.' : freshness === 'stale' ? 'Periksa koneksi untuk memperbarui snapshot. Data lama disembunyikan; Waker tidak dianggap idle atau bekerja.' : native.message ?? 'Menunggu pemeriksaan status QoderWake.'}</p>
           {nativeCurrent && native.board && <div className="native-board">
             <h3>Task Board global</h3>
             <p>Waktu sumber: <time dateTime={native.board.generatedAt}>{nativeTime.format(new Date(native.board.generatedAt))}</time>. Cuplikan {native.tasks.length} dari {native.board.total} tugas.</p>
