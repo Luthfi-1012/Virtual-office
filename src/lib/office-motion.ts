@@ -2,7 +2,7 @@ import { BoxGeometry, Color, CylinderGeometry, Euler, Group, Mesh, MeshStandardM
 import { agents, type Agent } from './agents';
 import type { OfficeModel } from './office-model';
 
-export type ActivityKind = 'coffee' | 'eat' | 'read' | 'tv' | 'game' | 'phone' | 'chat' | 'whiteboard' | 'stretch';
+export type ActivityKind = 'coffee' | 'eat' | 'read' | 'tv' | 'game' | 'phone' | 'chat' | 'whiteboard' | 'stretch' | 'lobby';
 
 export type ProjectStage =
   | { kind: 'kickoff'; label: string }
@@ -104,7 +104,7 @@ const meetingBoard = {
 
 const destinations: Record<Agent['id'], Destination> = {
   pm: { ...pantry, activities: ['coffee', 'eat'] },
-  design: { ...focus, activities: ['read'] },
+  design: { ...focus, activities: ['read', 'lobby'] },
   backend: { ...meetingChatA, activities: ['chat', 'stretch'] },
   frontend: { ...meetingChatB, activities: ['chat'] },
   qa: { ...lounge, activities: ['tv', 'game', 'phone'], approach: [[4, 2.45], [4, 3.45], ...lounge.approach] },
@@ -129,6 +129,7 @@ const activities: Record<ActivityKind, { facility: string; action: string; dwell
   coffee: { facility: 'pantry', action: 'Minum kopi', dwell: 9 },
   eat: { facility: 'pantry', action: 'Makan buah', dwell: 9 },
   read: { facility: 'sudut fokus', action: 'Membaca buku', dwell: 10 },
+  lobby: { facility: 'lobi', action: 'Meninjau brosur di lobi', dwell: 9 },
   tv: { facility: 'lounge', action: 'Menonton TV', dwell: 11 },
   game: { facility: 'lounge', action: 'Bermain konsol', dwell: 11 },
   phone: { facility: 'lounge', action: 'Bermain HP', dwell: 10 },
@@ -293,6 +294,7 @@ function createActivityProp(state: AgentState, kind: ActivityKind) {
     chat: 'idle-chat-bubble',
     whiteboard: 'idle-marker',
     stretch: 'idle-stretch',
+    lobby: 'idle-lobby',
   }[kind];
   prop.visible = false;
   prop.scale.setScalar(1.35);
@@ -830,6 +832,7 @@ export function createOfficeMotion(model: OfficeModel): OfficeMotion {
     else if (activity === 'chat') chatPose(state, prop, route.facingYaw ?? Math.PI, poseElapsed);
     else if (activity === 'whiteboard') whiteboardPose(state, prop, poseElapsed);
     else if (activity === 'stretch') stretchPose(state, route.facingYaw ?? Math.PI, poseElapsed);
+    else if (activity === 'lobby') chatPose(state, undefined, 0, poseElapsed);
     else seatedActivityPose(state, prop, activity, poseElapsed);
     updateAnchor(route.agentId);
   };

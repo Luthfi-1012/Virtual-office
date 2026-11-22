@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { agents, facilities } from '@/lib/agents';
-import type { Brief, NativeProject } from '@/lib/domain';
+import { rupiah, type Brief, type NativeProject } from '@/lib/domain';
 import { kopiSenjaNativeRequest } from '@/lib/fixture';
 import type { OfficeSnapshot } from '@/server/store';
 import type { ProjectStage } from '@/lib/office-motion';
@@ -420,6 +420,8 @@ export function OfficeApp() {
     requestAnimationFrame(() => document.getElementById('work-section')?.scrollIntoView({ block: 'start' }));
   };
   const creditPercent = native.credits ? Math.min(100, Math.round((native.credits.used / Math.max(native.credits.total, 1)) * 100)) : 0;
+  const approvedCount = snapshot.jobs.filter(item => item.status === 'approved').length;
+  const totalInvoiceValue = snapshot.jobs.reduce((sum, item) => sum + (item.package?.invoice.total ?? 0), 0);
 
   return <div className="app-shell">
     <a className="skip-link" href="#main">Lewati ke area kerja</a>
@@ -508,6 +510,11 @@ export function OfficeApp() {
           </div>
         </section>
         <section className="work-section" id="work-section" aria-label="Pekerjaan dan hasil">
+          <div className="kpi-strip" aria-label="Ringkasan KPI bisnis">
+            <div className="kpi-cell"><span>Paket disetujui</span><strong>{approvedCount} / {snapshot.jobs.length}</strong></div>
+            <div className="kpi-cell"><span>Total nilai draft invoice</span><strong>{rupiah(totalInvoiceValue)}</strong></div>
+            <div className="kpi-cell"><span>Status WakerFlow V13</span><strong>{workflowActive ? 'Aktif berjalan' : workflow.run ? `${formatRunTitle(workflow.run.title)} · ${workflow.run.status}` : 'Siaga'}</strong></div>
+          </div>
           <div className="work-section-heading">
             <div><span className="eyebrow">RUANG KERJA FOUNDER</span><h2>Pekerjaan & hasil</h2><p>Brief, preview, invoice simulasi, dan riwayat eksekusi WakerFlow V13.</p></div>
             <button className="primary new-brief" disabled={disabled} onClick={openNewBrief}>Brief baru<span aria-hidden="true">＋</span></button>

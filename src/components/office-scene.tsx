@@ -389,7 +389,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       {agents.map(agent => {
         const status = wakerStatuses[agent.id];
         return <button key={agent.id} ref={node => { if (node) hotspotRefs.current.set(agent.id, node); else hotspotRefs.current.delete(agent.id); }} className="agent-hotspot" aria-label={`Pilih ${agent.name}`} aria-description={status.label} aria-pressed={selected === agent.id} data-waker-id={agent.wakerId} data-waker-status={status.kind} title={status.label} onClick={() => onSelect(agent.id)}>
-          <span className="hotspot-name" aria-hidden="true">{wakerNames?.[agent.id] ?? agent.short}</span><span className={`hotspot-point native-${status.kind}`} aria-hidden="true"/><span className="hotspot-label">{agent.name}<small>{status.label}</small></span>
+          <span className="hotspot-name" aria-hidden="true"><i className={`name-dot native-${status.kind}`}/>{wakerNames?.[agent.id] ?? agent.short}</span><span className={`hotspot-point native-${status.kind}`} aria-hidden="true"/><span className="hotspot-label">{agent.name}<small>{status.label}</small></span>
         </button>;
       })}
     </div>
