@@ -155,6 +155,12 @@ export function OfficeApp() {
               ? { kind: 'handoff', from: 'qa', to: 'delivery', label: 'WakerFlow QA · Audit kualitas & serah terima ke Delivery' }
               : { kind: 'handoff', from: 'delivery', to: 'billing', label: 'WakerFlow Penyelesaian · Pengemasan hasil & draft billing' };
   const projectStage = manualProjectStage ?? derivedNativeStage;
+
+  useEffect(() => {
+    if (workflow.run && flowTimers.current.length === 0 && manualProjectStage?.kind === 'kickoff') {
+      setManualProjectStage(null);
+    }
+  }, [workflow.run?.runId, workflow.run?.status, workflow.run?.currentPhase, workflow.gate]);
   const eligibleAgents = (nativeCurrent
     ? agents.filter(item => wakerWorkState(native, item.wakerId, now) === 'idle')
     : agents
@@ -345,20 +351,30 @@ export function OfficeApp() {
       const isKopiSenja = brief.client.trim().toLowerCase() === 'kopi senja';
       const project: NativeProject = isKopiSenja ? kopiSenjaNativeRequest.project : {
         ...kopiSenjaNativeRequest.project,
-        objective: `Menyajikan profil ${brief.client}, layanan/produk unggulan, jam operasional, dan informasi kontak dalam website empat halaman yang nyaman diakses dari ponsel. ${brief.description}`,
+        objective: `Menyajikan profil ${brief.client}, daftar layanan/produk, jam operasional, dan informasi kontak dalam website empat halaman yang nyaman digunakan dari ponsel. ${brief.description}`,
         audience: brief.audience,
         features: [
           'Navigasi yang jelas antarhalaman Beranda, Menu, Tentang, dan Kontak.',
-          `Daftar produk/layanan ${brief.client} dengan harga contoh berlabel data demo.`,
-          `Jam operasional (${brief.hours}) dan lokasi contoh (${brief.location}).`,
-          'Tombol kontak hanya elemen preview internal; jangan menghubungi siapa pun.',
+          `Daftar produk/layanan ${brief.client} dengan harga contoh; setiap harga diberi label data demo.`,
+          `Jam operasional contoh (${brief.hours}) dan lokasi contoh (${brief.location}) yang diberi label contoh.`,
+          'Formulir kontak preview internal dengan validasi input kosong atau tidak valid yang menampilkan pesan jelas; hanya elemen preview tanpa menghubungi siapa pun.',
+        ],
+        acceptance: [
+          'Semua halaman dapat ditinjau sebagai preview internal.',
+          'Navigasi antarhalaman jelas dan tampilan mudah digunakan di layar ponsel.',
+          'Informasi layanan/produk, harga, jam buka, dan lokasi diberi label contoh atau data demo.',
+          'Input kosong atau tidak valid pada formulir preview ditangani dengan pesan yang jelas.',
+          'Tidak ada klaim bahwa kode production atau website production sudah dibuat.',
         ],
       };
       const result = await request('/api/qoderwake/workflow', { brief, project }) as { runId: string; reused: boolean };
       setForm(null); setConnected(true);
       setSelectedRunId(result.runId);
       setNotice(result.reused ? `Run ${result.runId} sudah ada; tidak ada run baru.` : `Run ${result.runId} diterima QoderWake. Status worker dipantau otomatis.`);
-      if (!result.reused) startProjectFlow(false);
+      if (!result.reused) {
+        clearFlowTimers();
+        setManualProjectStage({ kind: 'kickoff', label: 'Kickoff Meeting · 8 agent berkumpul menyusun rencana di ruang rapat' });
+      }
       await refreshWorkflow(nativeGeneration.current, result.runId);
     } catch (error) {
       setMessage(error instanceof Error ? `${error.message} Jangan mengirim ulang sebelum status run diperiksa.` : 'Dispatch belum terkonfirmasi. Jangan mengirim ulang sebelum status run diperiksa.');
