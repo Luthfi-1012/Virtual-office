@@ -56,6 +56,12 @@ const REALTIME_IDLE_POLL_MS = 60_000;
 const REALTIME_ACTIVE_POLL_MS = 15_000;
 const activeWorkflowStatuses = new Set(['running', 'waiting_confirmation', 'pending', 'queued']);
 
+function formatRunTitle(title?: string | null) {
+  if (!title) return 'Web Delivery Studio — Website Delivery';
+  const match = title.trim().match(/^第\s*(\d+)\s*次运行$/);
+  return match ? `Run ke-${match[1]}` : title;
+}
+
 export function OfficeApp() {
   const [snapshot, setSnapshot] = useState<OfficeSnapshot>({ jobs: [] });
   const [selectedJob, setSelectedJob] = useState('');
@@ -169,6 +175,10 @@ export function OfficeApp() {
     ? { kind: 'unknown', label: 'Memeriksa QoderWake · status belum diketahui' } as const
     : wakerDisplayStatus(native, item.wakerId, now)
   ])) as Record<string, WakerDisplayStatus>;
+  const wakerNames = Object.fromEntries(agents.map(item => [
+    item.id,
+    (nativeCurrent ? matchWakerById(native.wakers, item.wakerId)?.name : undefined) ?? item.short,
+  ])) as Record<string, string>;
   const agentNativeStatus = agent ? wakerStatuses[agent.id].label : `${freshnessLabel} · status tidak diketahui`;
   const room = selected === 'development'
     ? { name: 'Development Room', description: 'Ruang kolaborasi untuk lima peran perancang dan pembangun produk.', group: 'development' as const }
@@ -480,7 +490,7 @@ export function OfficeApp() {
               <button aria-pressed={view === 'list'} onClick={() => setView('list')}>Daftar agent</button>
             </div>
           </div>
-          {view === 'map' && <div className="map-canvas"><OfficeMap selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} snapshotExpiresAt={nativeCurrent ? Date.parse(native.checkedAt) + SNAPSHOT_MAX_AGE_MS : 0} snapshotLabel={freshnessLabel} theme={theme} projectStage={projectStage} onSelect={select} onFallback={() => setSceneFailed(true)}/></div>}
+          {view === 'map' && <div className="map-canvas"><OfficeMap selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} wakerNames={wakerNames} snapshotExpiresAt={nativeCurrent ? Date.parse(native.checkedAt) + SNAPSHOT_MAX_AGE_MS : 0} snapshotLabel={freshnessLabel} theme={theme} projectStage={projectStage} onSelect={select} onFallback={() => setSceneFailed(true)}/></div>}
           <div className={view === 'list' || sceneFailed ? 'agent-directory visible' : 'agent-directory mobile-fallback'}>
             {['development', 'delivery'].map(group => <section key={group}>
               <h3>{group === 'development' ? 'Development Room' : 'Web Delivery Room'}<span>{group === 'development' ? '5 peran' : '3 peran bisnis'}</span></h3>
@@ -512,7 +522,7 @@ export function OfficeApp() {
           {form && <BriefForm key={form.id} initial={form.kind === 'revise' ? form.initial : undefined} busy={disabled} submitBlocked={revisionConflict} nativeSubmitBlocked={nativePending} onCancel={() => setForm(null)} onSubmit={brief => mutate({ action: 'submit', key: crypto.randomUUID(), brief, ...(form.kind === 'revise' ? { jobId: form.jobId, expectedVersion: form.baseVersion } : {}) })} onNativeSubmit={submitNative}/>}
           {(workflow.request || (workflow.recentRuns?.length ?? 0) > 0) && <section className="job-panel panel" aria-label="Run WakerFlow native">
             <div className="section-heading">
-              <div><span className="eyebrow">WAKERFLOW NATIVE · V13 · TERHUBUNG QODERWAKE</span><h2>{workflow.run?.title ?? 'Web Delivery Studio — Website Delivery'}</h2></div>
+              <div><span className="eyebrow">WAKERFLOW NATIVE · V13 · TERHUBUNG QODERWAKE</span><h2>{formatRunTitle(workflow.run?.title)}</h2></div>
               <span className={`badge ${workflow.gate === 'waiting_for_founder' || workflow.gate === 'finished' ? 'good' : 'warm'}`}>
                 {workflow.gate === 'waiting_for_founder' ? 'Menunggu approval founder'
                   : workflow.gate === 'finished' ? 'Run selesai'
@@ -523,7 +533,7 @@ export function OfficeApp() {
               </span>
             </div>
             {(workflow.recentRuns?.length ?? 0) > 1 && <div className="workflow-runs" role="group" aria-label="Pilih riwayat run WakerFlow">
-              {workflow.recentRuns!.slice(0, 5).map(item => <button key={item.runId} type="button" aria-pressed={workflow.run?.runId === item.runId} onClick={() => { setSelectedRunId(item.runId); void refreshWorkflow(nativeGeneration.current, item.runId); }}>{item.title} · {item.status}</button>)}
+              {workflow.recentRuns!.slice(0, 5).map(item => <button key={item.runId} type="button" aria-pressed={workflow.run?.runId === item.runId} onClick={() => { setSelectedRunId(item.runId); void refreshWorkflow(nativeGeneration.current, item.runId); }}>{formatRunTitle(item.title)} · {item.status}</button>)}
             </div>}
             <dl className="facts workflow-facts">
               <div><dt>Run ID</dt><dd className="mono" data-testid="workflow-run-id">{workflow.request?.runId ?? workflow.run?.runId ?? 'Belum terkonfirmasi'}</dd></div>

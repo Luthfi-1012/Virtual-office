@@ -24,6 +24,7 @@ type Props = {
   selected: string;
   eligibleAgents: readonly string[];
   wakerStatuses: Readonly<Record<string, WakerDisplayStatus>>;
+  wakerNames?: Readonly<Record<string, string>>;
   snapshotExpiresAt: number;
   theme?: 'light' | 'dark';
   projectStage?: ProjectStage | null;
@@ -37,7 +38,7 @@ const isoOffset = new Vector3(25, 27, 31);
 const defaultTarget = new Vector3(0, .85, 0);
 const roomAnchors = { development: new Vector3(-5.8, 3.6, -9.35), delivery: new Vector3(5.4, 3.6, -9.35) };
 
-export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeScene({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, theme = 'light', projectStage = null, onActivityChange, onSelect, onZoomChange, onFallback, onMotionChange }, ref) {
+export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeScene({ selected, eligibleAgents, wakerStatuses, wakerNames, snapshotExpiresAt, theme = 'light', projectStage = null, onActivityChange, onSelect, onZoomChange, onFallback, onMotionChange }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const selectedRef = useRef(selected);
@@ -388,7 +389,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       {agents.map(agent => {
         const status = wakerStatuses[agent.id];
         return <button key={agent.id} ref={node => { if (node) hotspotRefs.current.set(agent.id, node); else hotspotRefs.current.delete(agent.id); }} className="agent-hotspot" aria-label={`Pilih ${agent.name}`} aria-description={status.label} aria-pressed={selected === agent.id} data-waker-id={agent.wakerId} data-waker-status={status.kind} title={status.label} onClick={() => onSelect(agent.id)}>
-          <span className={`hotspot-point native-${status.kind}`} aria-hidden="true"/><span className="hotspot-label">{agent.name}<small>{status.label}</small></span>
+          <span className="hotspot-name" aria-hidden="true">{wakerNames?.[agent.id] ?? agent.short}</span><span className={`hotspot-point native-${status.kind}`} aria-hidden="true"/><span className="hotspot-label">{agent.name}<small>{status.label}</small></span>
         </button>;
       })}
     </div>

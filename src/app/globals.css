@@ -786,6 +786,28 @@
   .hotspot-point.native-done { background: #64748b; }
   .hotspot-point.native-unknown { background: #94a3b8; }
 
+  .hotspot-name {
+    position: absolute;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .9);
+    border: 1px solid rgba(208, 213, 221, .85);
+    color: var(--text);
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--shadow-sm);
+  }
+  .agent-hotspot[aria-pressed=true] .hotspot-name {
+    background: var(--primary);
+    color: #ffffff;
+    border-color: var(--primary);
+  }
   .hotspot-label {
     position: absolute;
     left: 50%;
@@ -1204,7 +1226,29 @@
     .area-picker select { max-width: 145px; font-size: 11px; min-height: 30px; }
     .scene-room-labels { display: none !important; }
     .agent-hotspot { width: 25px; height: 25px; min-height: 25px; }
-    .hotspot-label { display: none; }
+    .hotspot-name {
+    position: absolute;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .9);
+    border: 1px solid rgba(208, 213, 221, .85);
+    color: var(--text);
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 1.25;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: var(--shadow-sm);
+  }
+  .agent-hotspot[aria-pressed=true] .hotspot-name {
+    background: var(--primary);
+    color: #ffffff;
+    border-color: var(--primary);
+  }
+  .hotspot-label { display: none; }
     .scene-bottom-bar { left: 10px; right: 10px; bottom: 10px; flex-direction: column; align-items: stretch; gap: 8px; }
     .live-activity-pill { max-width: 100%; font-size: 11.5px; padding: 7px 12px; }
     .scene-controls { align-self: flex-end; }
@@ -1269,6 +1313,8 @@
   color: var(--text);
 }
 :root[data-theme="dark"] .hotspot-label { background: #1e293b; color: #f8fafc; border-color: #334155; }
+:root[data-theme="dark"] .hotspot-name { background: rgba(18, 22, 29, .9); border-color: rgba(55, 65, 81, .88); color: #f3f4f6; }
+:root[data-theme="dark"] .agent-hotspot[aria-pressed=true] .hotspot-name { background: #f3f4f6; color: #0b0d10; border-color: #f3f4f6; }
 :root[data-theme="dark"] .hotspot-point { border-color: #0b0d10; }
 :root[data-theme="dark"] .room-portrait { background: #0f2523; }
 :root[data-theme="dark"] .room-portrait.delivery { background: #271c0c; color: #fbbf24; }

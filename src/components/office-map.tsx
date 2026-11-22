@@ -7,8 +7,8 @@ import { OfficeScene, type OfficeSceneHandle } from './office-scene';
 
 const areas = ['development', 'delivery', ...facilities.map(facility => facility.id)];
 
-export function OfficeMap({ selected, eligibleAgents, wakerStatuses, snapshotExpiresAt, snapshotLabel, theme, projectStage, onSelect, onFallback }: {
-  selected: string; eligibleAgents: readonly string[]; wakerStatuses: Readonly<Record<string, WakerDisplayStatus>>; snapshotExpiresAt: number; snapshotLabel: string;
+export function OfficeMap({ selected, eligibleAgents, wakerStatuses, wakerNames, snapshotExpiresAt, snapshotLabel, theme, projectStage, onSelect, onFallback }: {
+  selected: string; eligibleAgents: readonly string[]; wakerStatuses: Readonly<Record<string, WakerDisplayStatus>>; wakerNames?: Readonly<Record<string, string>>; snapshotExpiresAt: number; snapshotLabel: string;
   theme: 'light' | 'dark'; projectStage: ProjectStage | null;
   onSelect: (id: string) => void; onFallback: () => void;
 }) {
@@ -56,7 +56,7 @@ export function OfficeMap({ selected, eligibleAgents, wakerStatuses, snapshotExp
         {facilities.map(facility => <option key={facility.id} value={facility.id}>{facility.name}</option>)}
       </select></label>
     </div>
-    <OfficeScene ref={scene} selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} snapshotExpiresAt={snapshotExpiresAt} theme={theme} projectStage={projectStage} onSelect={onSelect} onZoomChange={setZoom} onFallback={unavailable} onMotionChange={setMotionRunning} onActivityChange={next => { setActivity(next); }}/>
+    <OfficeScene ref={scene} selected={selected} eligibleAgents={eligibleAgents} wakerStatuses={wakerStatuses} wakerNames={wakerNames} snapshotExpiresAt={snapshotExpiresAt} theme={theme} projectStage={projectStage} onSelect={onSelect} onZoomChange={setZoom} onFallback={unavailable} onMotionChange={setMotionRunning} onActivityChange={next => { setActivity(next); }}/>
     <div className="scene-bottom-bar">
       <div className={`live-activity-pill ${projectStage ? 'is-project' : ''}`} data-testid="live-activity" role="status">
         <span className={motionRunning ? 'live-dot active' : 'live-dot'} aria-hidden="true"/>
