@@ -553,7 +553,7 @@
   }
 
   .map-canvas { background: var(--office); position: relative; }
-  .office-3d { height: clamp(440px, 55vh, 600px); min-height: 440px; position: relative; overflow: hidden; background: var(--office); }
+  .office-3d { height: clamp(500px, 64vh, 720px); min-height: 500px; position: relative; overflow: hidden; background: var(--office); }
   .scene-viewport { position: absolute; inset: 0; }
   .office-canvas { display: block; width: 100%; height: 100%; cursor: grab; }
   .office-canvas:active { cursor: grabbing; }

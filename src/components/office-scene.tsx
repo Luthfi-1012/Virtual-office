@@ -129,7 +129,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
     });
 
     const aspect = Math.max(container.clientWidth / Math.max(container.clientHeight, 1), .5);
-    const frustum = Math.max(26.5, 34.5 / aspect);
+    const frustum = Math.max(24.0, 31.5 / aspect);
     const camera = new OrthographicCamera(-frustum * aspect / 2, frustum * aspect / 2, frustum / 2, -frustum / 2, .1, 140);
     camera.position.copy(isoOffset).add(defaultTarget);
     camera.lookAt(defaultTarget);
@@ -179,7 +179,7 @@ export const OfficeScene = forwardRef<OfficeSceneHandle, Props>(function OfficeS
       const width = Math.max(container.clientWidth, 1);
       const height = Math.max(container.clientHeight, 1);
       const nextAspect = width / height;
-      const nextFrustum = Math.max(26.5, 34.5 / nextAspect);
+      const nextFrustum = Math.max(24.0, 31.5 / nextAspect);
       camera.left = -nextFrustum * nextAspect / 2;
       camera.right = nextFrustum * nextAspect / 2;
       camera.top = nextFrustum / 2;
