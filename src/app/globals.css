@@ -1383,3 +1383,191 @@
 :root[data-theme="dark"] .notice.error { background: #2b1215; color: #fca5a5; border-color: #7f1d1d; }
 :root[data-theme="dark"] .preview-frame { background: #171c25; }
 :root[data-theme="dark"] ::selection { background: #134e4a; color: #ccfbf1; }
+
+/* 1. Compact Snapshot Banner */
+.mode-banner { min-height: 44px; padding-top: 8px; padding-bottom: 8px; }
+.snapshot-summary { min-width: 0; }
+.snapshot-summary p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner-isolation-note { color: var(--muted); }
+@media (max-width: 820px) {
+  .snapshot-summary p { white-space: normal; }
+  .banner-isolation-note { display: none; }
+}
+
+/* 2. Floating Toast Notification */
+.toast-notice {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, .28);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, .22);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.toast-notice button {
+  background: transparent;
+  border: 0;
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  cursor: pointer;
+}
+.toast-notice button:hover { color: #ffffff; }
+:root[data-theme="dark"] .toast-notice {
+  background: #1e293b;
+  border-color: #334155;
+}
+
+/* 3. 3-Step Track C Flow Guide */
+.flow-guide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.flow-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  opacity: .68;
+}
+.flow-step.active, .flow-step.done { opacity: 1; }
+.flow-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+.flow-step.active .flow-badge {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+.flow-step.done .flow-badge {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+.flow-step div { display: grid; gap: 1px; min-width: 0; }
+.flow-step strong { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-step small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-sep { color: var(--muted); font-size: 13px; }
+@media (max-width: 640px) {
+  .flow-guide { grid-template-columns: 1fr; gap: 8px; }
+  .flow-sep { display: none; }
+}
+:root[data-theme="dark"] .flow-step.active .flow-badge { background: #1e3a8a; color: #bfdbfe; border-color: #3b82f6; }
+:root[data-theme="dark"] .flow-step.done .flow-badge { background: #064e3b; color: #6ee7b7; border-color: #10b981; }
+
+/* 4. Collapsible WakerFlow V13 Worker Accordion */
+.workflow-timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 24px;
+  flex-wrap: wrap;
+}
+.workflow-timeline-head .scope-note { padding: 0; margin: 0; }
+.timeline-toggle-all,
+.workflow-accordion-btn {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 4px 9px;
+  min-height: 26px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.timeline-toggle-all:hover,
+.workflow-accordion-btn:hover { border-color: var(--muted); }
+.worker-row-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+.worker-row-meta { flex: 1; min-width: 0; }
+@media (max-width: 640px) {
+  .workflow-timeline-head { padding: 0 16px; }
+}
+
+/* 5. Colored Initial Avatars, Skeletons & Smooth Tab Fade */
+.role-avatar,
+.worker-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  letter-spacing: .02em;
+  flex-shrink: 0;
+}
+.worker-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 10.5px;
+  margin-top: 2px;
+}
+.role-avatar[data-agent="pm"], .worker-avatar[data-agent="pm"] { background: #ccfbf1; color: #0f766e; }
+.role-avatar[data-agent="design"], .worker-avatar[data-agent="design"] { background: #fef3c7; color: #b45309; }
+.role-avatar[data-agent="frontend"], .worker-avatar[data-agent="frontend"] { background: #dbeafe; color: #1d4ed8; }
+.role-avatar[data-agent="backend"], .worker-avatar[data-agent="backend"] { background: #e0e7ff; color: #4338ca; }
+.role-avatar[data-agent="qa"], .worker-avatar[data-agent="qa"] { background: #ffe4e6; color: #be123c; }
+.role-avatar[data-agent="intake"], .worker-avatar[data-agent="intake"] { background: #ede9fe; color: #6d28d9; }
+.role-avatar[data-agent="delivery"], .worker-avatar[data-agent="delivery"] { background: #d1fae5; color: #047857; }
+.role-avatar[data-agent="billing"], .worker-avatar[data-agent="billing"] { background: #ffedd5; color: #c2410c; }
+
+.skeleton-stack { display: grid; gap: 8px; padding: 4px 0; }
+.skeleton-line {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+}
+.skeleton-line.w-90 { width: 92%; }
+.skeleton-line.w-80 { width: 78%; }
+.skeleton-line.w-70 { width: 68%; }
+.skeleton-line.w-60 { width: 56%; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton-line { animation: skeleton-shimmer 1.3s ease-in-out infinite; }
+  .tab-panel-fade { animation: tab-fade .18s ease-out; }
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes tab-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -85,6 +85,9 @@ export function OfficeApp() {
   const [pending, setPending] = useState<Operation | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [toastNotice, setToastNotice] = useState('');
+  const [expandedWorkers, setExpandedWorkers] = useState<Record<number, boolean>>({});
+  const [expandAllWorkers, setExpandAllWorkers] = useState(false);
   const [manualProjectStage, setManualProjectStage] = useState<ProjectStage | null>(null);
   const flowTimers = useRef<number[]>([]);
   const csrf = useRef('');
@@ -127,6 +130,13 @@ export function OfficeApp() {
     if (saved === 'dark' || saved === 'light') setTheme(saved);
     return () => clearFlowTimers();
   }, []);
+
+  useEffect(() => {
+    if (!notice) return;
+    setToastNotice(notice);
+    const timer = window.setTimeout(() => setToastNotice(''), 4200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     if (theme === 'dark') document.documentElement.dataset.theme = 'dark';
@@ -444,16 +454,18 @@ export function OfficeApp() {
         <span>Founder<small>Operator lokal</small></span>
       </div>
     </header>
-    <div className="mode-banner">
+    <div className="mode-banner" title="Status 8 Waker dan WakerFlow dibaca langsung via CLI QoderWake; preview lokal dan invoice draft tetap terisolasi.">
       <span className={`badge ${nativeCurrent ? 'good' : 'warm'}`}>Snapshot QoderWake</span>
       <div className="snapshot-summary">
         <p>
           <strong data-testid="snapshot-status" role="status">{freshnessLabel}</strong>
-          {' · '}Auto-sync realtime ({workflowActive ? '15 dtk' : '60 dtk'})
-          {' · '}Pemeriksaan terakhir: {native.checkedAt ? <time data-testid="snapshot-checked" dateTime={native.checkedAt}>{nativeTime.format(new Date(native.checkedAt))}</time> : 'belum diperiksa'}
-          {lastSuccess && !nativeCurrent && <> · Snapshot sukses terakhir: <time data-testid="snapshot-success" dateTime={lastSuccess}>{nativeTime.format(new Date(lastSuccess))}</time></>}
+          {' · '}
+          {nativeCurrent ? `${native.wakers.length} Waker terhubung` : 'Status Waker belum diketahui'}
+          {' · '}Auto-sync {workflowActive ? '15 dtk' : '60 dtk'}
+          {' · '}Cek: {native.checkedAt ? <time data-testid="snapshot-checked" dateTime={native.checkedAt}>{nativeTime.format(new Date(native.checkedAt))}</time> : 'belum'}
+          {lastSuccess && !nativeCurrent && <> · Sukses terakhir: <time data-testid="snapshot-success" dateTime={lastSuccess}>{nativeTime.format(new Date(lastSuccess))}</time></>}
+          <span className="banner-isolation-note"> · Preview & invoice tetap lokal</span>
         </p>
-        <p>{!nativeCurrent && 'Status Waker tidak diketahui. '}Status 8 Waker dan WakerFlow dibaca langsung via CLI QoderWake; <strong>preview lokal dan invoice draft tetap terisolasi</strong>.</p>
       </div>
       {nativeCurrent && native.credits && <div className="banner-credit-pill" title="Pemakaian kredit akun Qoder resmi">
         <span>{native.credits.used.toLocaleString('id-ID')} / {native.credits.total.toLocaleString('id-ID')} {native.credits.unit}</span>
@@ -497,7 +509,7 @@ export function OfficeApp() {
             {['development', 'delivery'].map(group => <section key={group}>
               <h3>{group === 'development' ? 'Development Room' : 'Web Delivery Room'}<span>{group === 'development' ? '5 peran' : '3 peran bisnis'}</span></h3>
               {agents.filter(item => item.group === group).map(item => <button key={item.id} aria-label={`Detail ${item.name}`} aria-pressed={selected === item.id} onClick={() => select(item.id)}>
-                <span className="role-avatar" aria-hidden="true">{item.short}</span>
+                <span className="role-avatar" data-agent={item.id} aria-hidden="true">{item.short}</span>
                 <span><strong>{item.name}</strong><small>{wakerStatuses[item.id].label}</small></span>
                 <span aria-hidden="true">↗</span>
               </button>)}
@@ -510,6 +522,22 @@ export function OfficeApp() {
           </div>
         </section>
         <section className="work-section" id="work-section" aria-label="Pekerjaan dan hasil">
+          <div className="flow-guide" aria-label="Alur kerja bisnis Track C">
+            <div className={`flow-step ${job?.steps.some(s => s.stage === 'intake' && s.status === 'completed') ? 'done' : 'active'}`}>
+              <span className="flow-badge">{job?.steps.some(s => s.stage === 'intake' && s.status === 'completed') ? '✓' : '1'}</span>
+              <div><strong>1. Intake</strong><small>Brief & validasi</small></div>
+            </div>
+            <span className="flow-sep" aria-hidden="true">→</span>
+            <div className={`flow-step ${job?.steps.some(s => s.stage === 'delivery' && s.status === 'completed') ? 'done' : job ? 'active' : ''}`}>
+              <span className="flow-badge">{job?.steps.some(s => s.stage === 'delivery' && s.status === 'completed') ? '✓' : '2'}</span>
+              <div><strong>2. Delivery</strong><small>Preview & QA</small></div>
+            </div>
+            <span className="flow-sep" aria-hidden="true">→</span>
+            <div className={`flow-step ${job?.status === 'approved' ? 'done' : job?.steps.some(s => s.stage === 'billing' && s.status === 'completed') ? 'active' : ''}`}>
+              <span className="flow-badge">{job?.status === 'approved' ? '✓' : '3'}</span>
+              <div><strong>3. Billing</strong><small>{job?.status === 'approved' ? 'Disetujui internal' : 'Invoice & approval'}</small></div>
+            </div>
+          </div>
           <div className="kpi-strip" aria-label="Ringkasan KPI bisnis">
             <div className="kpi-cell"><span>Paket disetujui</span><strong>{approvedCount} / {snapshot.jobs.length}</strong></div>
             <div className="kpi-cell"><span>Total nilai draft invoice</span><strong>{rupiah(totalInvoiceValue)}</strong></div>
@@ -548,13 +576,27 @@ export function OfficeApp() {
               <div><dt>Fase aktual</dt><dd>{workflow.run?.currentPhase ?? 'Belum tersedia'}</dd></div>
               <div><dt>Approval founder</dt><dd>{workflow.founderApproval ? `${workflow.founderApproval.value} (${nativeTime.format(new Date(workflow.founderApproval.answeredAt))})` : workflow.pendingConfirmations.length ? `${workflow.pendingConfirmations.length} gate menunggu` : 'Belum ada'}</dd></div>
             </dl>
-            <p className="scope-note">Jejak handoff dan ringkasan kerja di bawah dibaca langsung dari event WakerFlow V13 QoderWake.</p>
-            {workflow.workers.length > 0 && <ol className="timeline workflow-timeline">{workflow.workers.map(worker => {
+            <div className="workflow-timeline-head">
+              <p className="scope-note">Jejak handoff dan ringkasan kerja di bawah dibaca langsung dari event WakerFlow V13 QoderWake.</p>
+              {workflow.workers.some(worker => Boolean(worker.summary)) && <button type="button" className="timeline-toggle-all" onClick={() => {
+                const next = !expandAllWorkers;
+                setExpandAllWorkers(next);
+                setExpandedWorkers({});
+              }}>{expandAllWorkers ? 'Ringkas semua' : 'Buka semua ringkasan'}</button>}
+            </div>
+            {workflow.workers.length > 0 && <ol className="timeline workflow-timeline">{workflow.workers.map((worker, index) => {
               const owner = worker.wakerId ? agents.find(item => item.wakerId === worker.wakerId) : undefined;
-              return <li key={worker.sequence}><span className="timeline-dot"/><div>
-                <p><strong>{worker.phase}</strong> · {worker.label}{owner ? ` (${owner.name})` : ''}</p>
-                <span className="muted">{worker.status}{worker.nextOwner ? ` · handoff → ${worker.nextOwner}` : ''}{worker.issueCount ? ` · ${worker.issueCount} catatan` : ''}</span>
-                {worker.summary && <p className="worker-summary">{worker.summary}</p>}
+              const isExpanded = expandedWorkers[worker.sequence] ?? (expandAllWorkers || index === workflow.workers.length - 1);
+              return <li key={worker.sequence} className={isExpanded ? 'expanded' : 'collapsed'}><span className="timeline-dot"/><div>
+                <div className="worker-row-head">
+                  {owner && <span className="worker-avatar" data-agent={owner.id} aria-hidden="true">{owner.short.slice(0, 2).toUpperCase()}</span>}
+                  <div className="worker-row-meta">
+                    <p><strong>{worker.phase}</strong> · {worker.label}{owner ? ` (${owner.name})` : ''}</p>
+                    <span className="muted">{worker.status}{worker.nextOwner ? ` · handoff → ${worker.nextOwner}` : ''}{worker.issueCount ? ` · ${worker.issueCount} catatan` : ''}</span>
+                  </div>
+                  {worker.summary && <button type="button" className="workflow-accordion-btn" aria-expanded={isExpanded} onClick={() => setExpandedWorkers(current => ({ ...current, [worker.sequence]: !isExpanded }))}>{isExpanded ? 'Tutup' : 'Detail'}</button>}
+                </div>
+                {worker.summary && isExpanded && <p className="worker-summary">{worker.summary}</p>}
               </div></li>;
             })}</ol>}
             {workflow.finalSummary && <div className="final-summary"><strong>Ringkasan Akhir PM</strong><p>{workflow.finalSummary}</p></div>}
@@ -590,12 +632,12 @@ export function OfficeApp() {
               </dl>
               <h3 className="native-subheading">Tugas Task Board</h3>
               {nativeTasks.length ? <ul className="native-records">{nativeTasks.slice(0, 5).map(task => <li key={task.id}><strong>{task.title}</strong><span>{task.status} · {task.sourceName}</span><time dateTime={task.lastActiveAt}>{nativeTime.format(new Date(task.lastActiveAt))}</time></li>)}</ul> : <p className="native-empty">Tidak ada tugas untuk Waker ini dalam cuplikan Task Board yang diterima.</p>}
-            </> : <dl className="facts"><div><dt>Tugas native</dt><dd>{nativeCurrent ? 'ID sumber tidak memiliki kecocokan Waker yang unik' : 'Belum ada data'}</dd></div><div><dt>Progres / tahap</dt><dd>Tidak diketahui</dd></div><div><dt>Handoff native</dt><dd>Belum terverifikasi</dd></div></dl>}
+            </> : checkingNative ? <div className="skeleton-stack" aria-hidden="true"><span className="skeleton-line w-80"/><span className="skeleton-line w-60"/><span className="skeleton-line w-90"/></div> : <dl className="facts"><div><dt>Tugas native</dt><dd>{nativeCurrent ? 'ID sumber tidak memiliki kecocokan Waker yang unik' : 'Belum ada data'}</dd></div><div><dt>Progres / tahap</dt><dd>Tidak diketahui</dd></div><div><dt>Handoff native</dt><dd>Belum terverifikasi</dd></div></dl>}
           </div>
           {nativeStep && <div className="local-step"><h3>Pemrosesan lokal terkait</h3><p>{nativeStep.summary}</p><small>{nativeStep.status === 'completed' ? 'Selesai' : 'Gagal'} · selanjutnya: {nativeStep.nextOwner}</small><p className="muted">Bukan tugas atau hasil eksekusi Waker.</p></div>}
           <div className="activity-empty">
             <h3>Aktivitas sesi QoderWake</h3>
-            {nativeActivities.length ? <ul className="native-records">{nativeActivities.slice(0, 6).map(activity => <li key={activity.id}><strong>{activity.title}</strong><span>{activity.status}{activity.source ? ` · ${activity.source}` : ''}</span><time dateTime={activity.lastActiveAt}>{nativeTime.format(new Date(activity.lastActiveAt))}</time></li>)}</ul> : <p>{nativeCurrent ? nativeWaker ? 'Tidak ada metadata sesi untuk Waker ini pada snapshot. Isi percakapan tidak dibaca.' : 'Aktivitas tidak dapat dipetakan tanpa kecocokan ID Waker yang unik.' : 'Belum tersedia dari QoderWake. Tidak ada aktivitas atau percakapan yang direkayasa.'}</p>}
+            {nativeActivities.length ? <ul className="native-records">{nativeActivities.slice(0, 6).map(activity => <li key={activity.id}><strong>{activity.title}</strong><span>{activity.status}{activity.source ? ` · ${activity.source}` : ''}</span><time dateTime={activity.lastActiveAt}>{nativeTime.format(new Date(activity.lastActiveAt))}</time></li>)}</ul> : checkingNative ? <div className="skeleton-stack" aria-hidden="true"><span className="skeleton-line w-70"/><span className="skeleton-line w-90"/></div> : <p>{nativeCurrent ? nativeWaker ? 'Tidak ada metadata sesi untuk Waker ini pada snapshot. Isi percakapan tidak dibaca.' : 'Aktivitas tidak dapat dipetakan tanpa kecocokan ID Waker yang unik.' : 'Belum tersedia dari QoderWake. Tidak ada aktivitas atau percakapan yang direkayasa.'}</p>}
           </div>
         </> : room ? <><div className="inspector-topline"><span className="eyebrow">RUANG TIM</span><span className="badge">{room.group === 'development' ? '5 peran' : '3 peran'}</span></div><div className={`room-portrait ${room.group}`} aria-hidden="true"><RailIcon><path d="m12 3 9 5v10l-9 5-9-5V8l9-5Z"/><path d="m3 8 9 5 9-5M12 13v10M8 10.5v4M16 10.5v4"/></RailIcon></div><h2>{room.name}</h2><p>{room.description}</p><span className="native-status">Model ruang 3D</span><div className="inspector-section"><h3>Peran dalam ruangan</h3><div className="room-agent-list">{agents.filter(item => item.group === room.group).map(item => <button key={item.id} onClick={() => select(item.id)}>{item.name}<span aria-hidden="true">→</span></button>)}</div></div></>
           : <><div className="inspector-topline"><span className="eyebrow">FASILITAS BERSAMA</span><span className="badge">Area visual</span></div><div className="facility-portrait" aria-hidden="true"><RailIcon><path d="M3 21V8l9-5 9 5v13M7 21v-8h10v8M8 8h.01M12 8h.01M16 8h.01"/></RailIcon></div><h2>{facility?.name}</h2><p>{facility?.description}</p><span className="native-status">Area visual saja</span><p className="facility-note">Fasilitas mendukung aktivitas kantor realtime: ngobrol dan diskusi di ruang rapat, pantry, sudut fokus, dan lounge konsol.</p></>}
@@ -623,13 +665,14 @@ export function OfficeApp() {
             <p><strong>{native.credits.used.toLocaleString('id-ID')} / {native.credits.total.toLocaleString('id-ID')} {native.credits.unit} terpakai ({creditPercent}%)</strong></p>
             <div className="credit-meter" aria-hidden="true"><span className="credit-meter-fill" style={{ width: `${creditPercent}%` }}/></div>
             <small>Sisa {native.credits.remaining.toLocaleString('id-ID')} {native.credits.unit} · sumber resmi: qoderwake account usage.</small>
-          </> : <>
+          </> : checkingNative ? <div className="skeleton-stack" aria-hidden="true"><span className="skeleton-line w-80"/><span className="skeleton-line w-60"/></div> : <>
             <p>Belum terbaca dari CLI QoderWake.</p>
             <small>Klik Periksa koneksi untuk membaca kuota resmi akun Qoder.</small>
           </>}
         </div>
       </aside>
     </div>
+    {toastNotice && <div className="toast-notice" aria-live="polite"><span>{toastNotice}</span><button type="button" aria-label="Tutup notifikasi" onClick={() => setToastNotice('')}>×</button></div>}
     <footer className="app-footer"><span>VIRTUAL OFFICE · WEB DELIVERY STUDIO</span><span>Integrasi QoderWake Realtime · Preview & Invoice Terisolasi</span></footer>
   </div>;
 }
